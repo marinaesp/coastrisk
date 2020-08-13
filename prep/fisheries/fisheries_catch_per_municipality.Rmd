@@ -1,0 +1,86 @@
+---
+title: "Fisheries data preparation"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    # highlight: tango
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source('~/github/coastrisk/src/common.r')
+```
+
+
+```{r additional libraries, inlcude = FALSE}
+library(data.table)
+library(vroom)
+```
+
+
+
+# Loading fisheries catch data: fast approach
+(did not work on my mac, also did not work using `parallel` package)
+```{r}
+catch_00_18 <- list.files(
+  path = file.path("/Volumes/ftp.imr.no-1/fisheries_data/catch_open_fiskedir_data_2000_2018/raw_data"), 
+  pattern = "*.csv",
+  full.names = T) 
+  
+
+catch_prep <- map(catch_00_18, 
+                  ~ vroom::vroom(.x,
+  .name_repair = ~ janitor::make_clean_names(.)
+  ))
+  
+  
+catch_prep2 <- map(catch_prep, ~ 
+    select(.x, c(
+    landingskommune,
+    fartoytype,
+    fartoykommune_kode,
+    fartoynasjonalitet_kode,
+    fartoynasjonalitet,
+    lengdegruppe_kode,
+    lengdegruppe,
+    redskap,
+    fangstfelt_kode,
+    kyst_hav_kode,
+    hovedomrade_kode,
+    hovedomrade,
+    lon_hovedomrade,
+    lat_hovedomrade,
+    lokasjon_kode,
+    lon_lokasjon,
+    lat_lokasjon,
+    landingsdato,
+    landingsmaned_kode,
+    art,
+    art_hovedgruppe,
+    bruttovekt,
+    rundvekt
+  )
+)) %>%
+  do.call("rbind", .)
+   
+```
+
+
+```{r}
+vroom_write(catch_prep2, "data/catch_2000_2018.csv.gz", delim = ";")
+vroom_write(catch_prep2, "data/catch_2000_2018.tsv.gz")
+```
+
+
+
+
