@@ -1,0 +1,580 @@
+---
+title: "Aquaculture production per production area"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r additional libraries, inlcude = FALSE}
+library(data.table)
+library(vroom)
+library(rebus)
+```
+
+# Loading the produciton data from coastrisk ftp
+Load the excel production data sheet by sheet, using a simple function. 
+A path to aquaculture production file is long, but that is the way to indicate the data from ftp server. Windows users will need to edit the path.
+
+```{r}
+load_by_sheet <-function(x, page = 1) {
+  read_excel(file.path(x),sheet = page)
+}
+
+path <- file.path("/Volumes/ftp.imr.no/aquaculture/aquaculture_annual_production/data/raw_data/20_3025_Biodata_2005-2018_unlocked.xlsx")
+```
+
+I will create a list of production tables, each item in the list - production for a single year.
+```{r}
+pages <- as.list(2:15)
+aqua_prep <- map2(path, pages, load_by_sheet)
+```
+
+# Cleaning aquaculture production data
+There are 16 lines where municipality (kommune) is not provided. There is no way to guess where these farms were (likely, they were moved or closed down), I will just remove them from the table.
+```{r}
+aqua_prep2 <-aqua_prep %>% 
+  do.call("rbind",.) %>% 
+  clean_names(.) %>% 
+  rename(year = aar,
+         fylke_kode = f_kode,
+          fylke = f_navn) %>% 
+  filter(!komnr == "(null)")
+```
+
+# Preparing production data
+First, we need to calculate the change in the biomass of fish from December of year X minus biomass in year X-1 (previous year). 
+I use the same approach as [here](https://ohi-norway.github.io/nor-prep/prep/food_provision/Mariculture/total_aquaculture_production_and_efcr_newdata_jan2020.html).
+
+
+Normally, we should have one line of production data per municipality and year. One line means unique combination of municipality, year and biomass of fish each month that year. However, there are duplicated rows of the same municipality and year. The biomass data between those duplicates is different and usually, one of each two duplicates was checked by FISKEDIR, while another - not. However, I checked that in some instances (kommune 901) there is only one row of data in a given year, and it was not checked by FISKEDIR. Should we delete it? I prefer to keep it although it may not be the best quality data.
+
+Some not checked rows indicated as zeroes, and others - as NEI, I will homogenize them. Next, I split the table  by year*municipality combination.
+
+Function to count the number of non-zero observations in a vector:
+```{r}
+count_nonzeros <- function(some_vect) {
+  sum_nonzero <-length(which(some_vect != 0))
+  sum_nonzero
+}
+```
+
+Calculate in how many months there are non-zero observations per data row:
+```{r}
+aqua_prep3 <- aqua_prep2 %>% 
+  mutate(gjennomgatt = replace(
+    gjennomgatt, gjennomgatt == "0",
+    "NEI"
+  )) %>% 
+  rowwise() %>% 
+  mutate(nonzero_records = count_nonzeros(c(
+    laks_jan_beh_kg,
+    laks_feb_beh_kg,
+    laks_mar_beh_kg,
+    laks_apr_beh_kg,
+    laks_mai_beh_kg,
+    laks_jun_beh_kg,
+    laks_jul_beh_kg,
+    laks_aug_beh_kg,
+    laks_sep_beh_kg,
+    laks_okt_beh_kg,
+    laks_nov_beh_kg,
+    laks_des_beh_kg,
+    regnb_jan_beh_kg,
+    regnb_feb_beh_kg,
+    regnb_mar_beh_kg,
+    regnb_apr_beh_kg,
+    regnb_mai_beh_kg,
+    regnb_jun_beh_kg,
+    regnb_jul_beh_kg,
+    regnb_aug_beh_kg,
+    regnb_sep_beh_kg,
+    regnb_okt_beh_kg,
+    regnb_nov_beh_kg,
+    regnb_des_beh_kg
+  ))) 
+      
+```
+
+Split the dataframe by year*municipality combination:
+```{r}
+ aqua_prep4 <- aqua_prep3 %>% 
+  group_by(year, komnr) %>% 
+  group_split(.)
+```
+
+Function to to remove NEI-row if there is one and keep only the JA-row (meaning, remove non-checked and keep checked rows).
+The idea is that if there is more than one row of data that has been checked by Fiskedir, we take the one that has more non-zero observations (data for more months of a year). If there is only one row of data that was checked by Fiskedir, we just take that row.
+Usually, there are 1 or 2 rows that were not checked and one row that was checked.
+```{r}
+filter_rows <- function(df, idcol, sumcol) {
+  if  (sum(str_detect(idcol, pattern = "JA")) == 1) {
+    output_df <- filter(df, idcol == "JA")
+  } else {
+   output_df <- slice_max(df, sumcol)
+  }
+  output_df
+}
+```
+
+```{r}
+aqua_prep5 <- aqua_prep4 %>% 
+  map(., ~ filter_rows(.x, .x$gjennomgatt, .x$nonzero_records)) %>% 
+  do.call("rbind",. )
+
+```
+
+Now we need to verify that there are no duplicates in year*municipality combinations: all the combinations are unique
+```{r}
+aqua_prep5 %>% group_by(year, komnr) %>% tally() %>% filter(n > 1)
+```
+Calculate biomass change per year and municipality
+```{r}
+aqua_prep6 <- aqua_prep5 %>% 
+  group_by(komnr) %>% 
+  arrange(year) %>% 
+  mutate(laks_des_previous_year = lag(laks_des_beh_kg)) %>% 
+  mutate(rengb_des_previous_year = lag(regnb_des_beh_kg)) %>% 
+  ungroup() %>% 
+  mutate(biomchange_salmon = (laks_des_beh_kg - laks_des_previous_year)) %>% 
+  mutate(biomchange_trout = (regnb_des_beh_kg - rengb_des_previous_year)) %>% 
+  select(-nonzero_records) 
+```
+
+For how many rows of data there is NA in biomass change? 196, these are observations from 2005, when no previous year biomass data is available and some cases, where a municipality did not have production in the previous year. 
+```{r}
+sum(is.na(aqua_prep6$biomchange_salmon))
+```
+
+For these 196 cases, I have to calculate biomass change differently. Since I cannot subtract December from the previous year December,I look at the values of the given year only, and take the difference of the latest month and the earliest month with data (like if production started in February and continued through December of the give year).
+Here is the function to calculate biomass change for these 196 cases:
+
+```{r}
+output_vect <-as.numeric()
+replace_biomass <- function(cols) {
+  biomdat <- as.numeric(cols)
+  if (sum(biomdat) == 0) {
+    biomchange <- 0
+  } else {
+    output_vect <- biomdat[which(biomdat > 0)]
+    biomchange <- sum(output_vect[length(output_vect)], -output_vect[1])
+  }
+  biomchange
+}
+```
+
+
+```{r}
+missingdat <-filter(aqua_prep6, is.na(biomchange_salmon)) %>%
+  rowwise() %>%
+  mutate(biomchange_salmon_replaced = replace_biomass(c(
+    laks_jan_beh_kg,
+    laks_feb_beh_kg,
+    laks_mar_beh_kg,
+    laks_apr_beh_kg,
+    laks_mai_beh_kg,
+    laks_jun_beh_kg,
+    laks_jul_beh_kg,
+    laks_aug_beh_kg,
+    laks_sep_beh_kg,
+    laks_okt_beh_kg,
+    laks_nov_beh_kg,
+    laks_des_beh_kg
+  ))) %>% 
+  mutate(biomchange_trout_replaced = replace_biomass(c( 
+    regnb_jan_beh_kg,
+    regnb_feb_beh_kg,
+    regnb_mar_beh_kg,
+    regnb_apr_beh_kg,
+    regnb_mai_beh_kg,
+    regnb_jun_beh_kg,
+    regnb_jul_beh_kg,
+    regnb_aug_beh_kg,
+    regnb_sep_beh_kg,
+    regnb_okt_beh_kg,
+    regnb_nov_beh_kg,
+    regnb_des_beh_kg
+  ))) %>% 
+  select(-c(biomchange_salmon,biomchange_trout)) %>% 
+  rename(biomchange_salmon = biomchange_salmon_replaced, 
+         biomchange_trout = biomchange_trout_replaced)
+```
+
+And I can bind the rows with NA biomass changes (196 rows) and other rows together.
+```{r}
+aqua_prep7 <- aqua_prep6 %>% 
+  filter(year!= 2005) %>% 
+  filter(!is.na(biomchange_salmon)) %>% 
+  bind_rows(missingdat) %>% 
+  select(-c(
+    laks_jan_beh_kg,
+    laks_feb_beh_kg,
+    laks_mar_beh_kg,
+    laks_apr_beh_kg,
+    laks_mai_beh_kg,
+    laks_jun_beh_kg,
+    laks_jul_beh_kg,
+    laks_aug_beh_kg,
+    laks_sep_beh_kg,
+    laks_okt_beh_kg,
+    laks_nov_beh_kg,
+    laks_des_beh_kg,
+    regnb_jan_beh_kg,
+    regnb_feb_beh_kg,
+    regnb_mar_beh_kg,
+    regnb_apr_beh_kg,
+    regnb_mai_beh_kg,
+    regnb_jun_beh_kg,
+    regnb_jul_beh_kg,
+    regnb_aug_beh_kg,
+    regnb_sep_beh_kg,
+    regnb_okt_beh_kg,
+    regnb_nov_beh_kg,
+    regnb_des_beh_kg,
+    laks_des_previous_year,
+    rengb_des_previous_year
+  ))
+```
+
+
+
+# Calculating annual aquaculture production per municipality
+For the estimation of final production, we assume that the weight of smolts is  100 grams, the weight of discarded salmon - **5**  kg, and the weight of  added  live fish is 1.5 kg. We take a sum of all these variables for trout and salmon.
+
+$Tot.prod = \triangle Biomass + harvest + removed\ fish  - seeded\ smolts - added\ fish - discard$
+```{r}
+aqua_prep8 <- aqua_prep7 %>% 
+  rename(county = fylke,
+         municip_number = komnr,
+         seeded_smolts = utsatt_smolt_stk,
+         seeded_total = utsatt_totalt_stk,
+         feed_used_kg = forforbruk_kg,
+         discared_fish = tap_utkast_stk,
+         harvested_fish_kg = uttak_slakt_kg,
+         removed_fish_kg = uttak_levende_kg
+         ) %>% 
+mutate(added_fish = seeded_total - seeded_smolts) %>% 
+mutate(added_fish_kg = added_fish * 1.5) %>% 
+mutate(seeded_smolts_kg = seeded_smolts * 0.1) %>% 
+mutate(discarded_kg = discared_fish * 5) %>% 
+   mutate(
+     production_final = 
+       pmap_dbl(
+         list(
+          biomchange_salmon,
+          biomchange_trout,
+          harvested_fish_kg,
+          removed_fish_kg,
+          -seeded_smolts_kg,
+          -added_fish_kg,
+          -discarded_kg
+         ),
+         sum
+       ))
+```
+
+Some of the total production values will be negative, because we cannot control for the precise weight of the added fish (and some may not be registered at all).
+148 out of 2315 observations are negative, about 6%.
+```{r}
+aqua_prep8 %>% filter(production_final < 0) %>% tally()
+```
+Take a quick look at the distribution of total annual production (kg) over Norway:
+```{r}
+mosaic::fav_stats(aqua_prep8$production_final)
+```
+Save the production per municipality table. Add a leading zero to some municipalities' numbers, should be always 4 digits in a municipality's number.
+```{r}
+
+aqua_final <- aqua_prep8 %>% 
+  select(c(year,
+           county,
+           municip_number,
+           production_final)) %>% 
+  mutate(municip_number =
+           ifelse(
+             str_count(municip_number, pattern = regex("[:digit:]")) == 3,
+                       str_c("0",municip_number),
+                       municip_number
+             )
+         )
+
+write.csv(aqua_final, "data/annual_aqua_production_per_mcp.csv", row.names = F)
+```
+
+
+# Calculating aquaculture yield per each of 13 production areas
+Load the table on municipalities and production areas they are located in.
+NB!! Municipalities' numbers in this file and in the aquaculture production table are both per 2019 (not including changes of 2020). 
+```{r}
+mcp_prod <- read.csv(file.path("/Volumes/ftp.imr.no/ProductionAreas/municipality_productionarea.csv"),sep = " ")
+```
+
+The idea is to clean a bit the *mcp_prod* table, to homogenize the production areas names, and then to add production areas names to the
+table of aquaculture annual yield. Then, I can calculate the total aquaculture yield per production area.
+
+```{r}
+mcp_prod_prep <- mcp_prod %>% 
+  rename(county_number = fylkenummer,
+         municip_number = kommunenummer,
+         municip_name = komname,
+         total_mcp_area = Totalt_areal_inkl_12nm,
+         sea_mcp_area = Havflate_12nm,
+         prod_area_id = id,
+         prod_area_name = name
+         ) %>% 
+  select(-knum) %>% 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = "->", replacement = "-"
+    )
+  ) %>% 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = fixed("+"), replacement = "-"
+    )
+  )
+```
+
+Then I also correct the municipality number - where it has only 3 digits, should be  zero in front. Importantly, the table with municipalities and their production regions use municipalities numbers as they were before 2020. But for Trondelag, the municipalities numbers are as they were after 2018. However, the aquaculture production table uses a mix of both old and new numbers (as FISKEDIR explained this is a mistake, there is a confusion with municiaplities's numbers and they cannot fix that).
+
+```{r}
+mcp_prod_prep2 <- mcp_prod_prep %>% 
+  mutate(municip_number =
+           ifelse(
+             str_count(municip_number, pattern = regex("[:digit:]")) == 3,
+                       str_c("0",municip_number),
+                       municip_number
+             )
+         )
+```
+
+Merge the two tables
+```{r}
+aqua_per_prodreg <- aqua_final %>% 
+  left_join(mcp_prod_prep2[,c(
+    "municip_number",
+    "municip_name",
+    "total_mcp_area",
+    "sea_mcp_area",
+    "prod_area_id",
+    "prod_area_name"
+  )],
+  by = "municip_number")
+```
+
+Municipalities that had new numbers as of 2020, did not have a match in production area table. But what are they? 
+```{r}
+View(filter(aqua_per_prodreg, is.na(prod_area_id)))
+```
+
+It is difficult to replace 2020 municipalities' numbers with older ones, because some municipalities merged. For instance, there is municipality 1108 - Sandnes,in the aquaculture table, but new Sandnes was made of merging old Sandnes with 1102 number and Forsand 1129. There is a municipality 1108 in years 2011, 2012, 2013, but which one it is? Sandnes old or Forsand? Or both? And why along with this municipality there is also old Sandnes 1102 in the same year - 2011? 
+FISKEDIR explained they cannot help solve this confusion with municipalities' numbers, so just have to assume that the "knew" municipality, is one of the older ones.
+
+## Fixing municipalities' numbers in the aquaculture production table
+Import the table of new and old municipalities' names and numbers
+
+```{r}
+convert_mcp <- read_excel(file.path("../administrative/kommune_endringer_2000_2018.xlsx"))
+```
+
+```{r}
+convert_mcp %>% group_by(municip_number_new) %>% tally() %>% filter(n > 1)
+```
+These are the 6 occasions, where municipalities merged into one in 2020 (n=2 - two municipalities merged, n=3 - 3 municipalities merged). I will assume that the municipality with 2020 number represents this municipality in aquaculture production table (it has to be only one of the merged municipalities):
+
+New number|New name|Old number|Old name|
+|--------------|-------------|---------------|-----------|
+1108|Sandnes |1102 |Sandnes|
+1506|Molde |1502 |Molde|
+1507|Alesund |1529 |Skodje|
+1578|Fjord | 1524 |Norddal|
+1579|Hustadvika |1548 |Fræna
+1806| Narvik | 1850 | Tysfjord
+
+Remove duplicated municipalities numbers from conversion table and remove leading white space in the municipalities' numbers
+```{r}
+convert_mcp_prep1 <-convert_mcp %>% 
+  mutate(
+    municip_number_old = str_trim(municip_number_old)) %>% 
+   mutate(
+     municip_number_new = str_trim(municip_number_new)) 
+```
+
+```{r}
+convert_mcp_prep2 <-convert_mcp_prep1 %>% 
+  filter(municip_number_new %in% c(
+    1108,
+    1506,
+    1507,
+    1578,
+    1579,
+    1806
+  )) %>% 
+  filter(municip_number_old %in% c(
+    1102,
+    1502,
+    1529,
+    1524,
+    1548,
+    1850
+  ))
+```
+
+```{r}
+convert_mcp_prep3 <- convert_mcp_prep1 %>% 
+  filter(!municip_number_new %in% c(
+    1108,
+    1506,
+    1507,
+    1578,
+    1579,
+    1806
+  )) %>% 
+  bind_rows(., convert_mcp_prep2)
+
+convert_mcp_prep3
+```
+Now we need to add old municipalities' numbers to the aquaculture production table
+
+```{r}
+aqua_per_prodreg_prep2 <- aqua_final %>% 
+  left_join(convert_mcp_prep2[,c("municip_number_old",
+                                 "municip_number_new")]
+,
+  by = c("municip_number" = "municip_number_new")) %>% 
+  mutate(municip_number_old = ifelse(is.na(municip_number_old),
+                                           municip_number,
+                                           municip_number_old)) %>% 
+  select(-municip_number)
+```
+
+There are still 148 rows with negative production, for now I will replace those negative values with NA. Replacing with zero is not correct - there was a produced biomass, but we don't know how much.Then I will take a sum of productions for municipalities that occur under old and new numbers (example - Sandnes 1108 and Sandnes 1102).
+The sum of two negative production values (NA plus NA) will return zero, so I will replace those zeroes with NA again. 
+Also, I remove leading white space in the old municipalities'numbers
+
+```{r}
+aqua_per_prodreg_prep3 <- aqua_per_prodreg_prep2 %>% 
+  mutate(production_final = ifelse(
+    production_final < 0,
+    NA,
+    production_final
+  )) %>% 
+  group_by(year, county,municip_number_old) %>% 
+  summarize(production_final = sum(production_final, na.rm = T)) %>% 
+  mutate(production_final = replace(production_final, 
+                                    production_final == 0, 
+         NA)) %>% 
+  mutate(
+     municip_number_old = str_trim(municip_number_old))
+```
+Now we have only old (before 2018) municipalities' numbers for Trondelag, but production areas tables uses after-2018 numbers, so I will replace the municipalities' numbers for Trondelag.
+```{r}
+aqua_per_prodreg_prep4 <- aqua_per_prodreg_prep3  %>% 
+  filter(county == "TRØNDELAG") %>% 
+  left_join(convert_mcp_prep3[,c("municip_number_old", "municip_number_new")],
+            by = "municip_number_old") %>% 
+  mutate(municip_number = municip_number_new) %>% 
+  select(-c(municip_number_old,municip_number_new)) %>% 
+  select(c(
+    year, 
+    county,
+    municip_number,
+    production_final))
+
+  
+```
+
+Combine Trondelag with the other municipalities in the aquaculture production table
+```{r}
+aqua_per_prodreg_prep5 <- aqua_per_prodreg_prep3 %>%
+  filter(!county == "TRØNDELAG") %>% 
+  rename(municip_number = municip_number_old) %>% 
+  bind_rows(., aqua_per_prodreg_prep4)
+  
+```
+
+
+Now we can merge again the production regions table and the aquaculture production table
+```{r}
+aqua_per_prodreg_prep6 <- aqua_per_prodreg_prep5 %>% 
+  left_join(mcp_prod_prep2[,c(
+    "municip_number",
+    "municip_name",
+    "total_mcp_area",
+    "sea_mcp_area",
+    "prod_area_id",
+    "prod_area_name"
+  )],
+  by = "municip_number")
+  
+```
+
+6 rows still did not have a match in the production areas table (by municipality's number)
+```{r}
+filter(aqua_per_prodreg_prep6, is.na(prod_area_name))
+```
+
+1544 - is a former Bolsoy kommune, since 1960's it is Molde 1502
+1556 - is a former Brei municipality, 1960's Tingvoll 1560
+0438 - Avdal , since 2020 it is 3428 Alvdal,
+0436 - Tolga, since 3426 Tolga
+
+Molde 1502 and Tingvoll 1560 have matches in produciton areas, but the 0438 and 0436 municipalities are not there, neither under new nor under old numbers.
+Do merging again but replaceing 1544 municipality's number and 1556 with 1502 and 1560, respectively.
+```{r}
+aqua_per_prodreg_prep7 <- aqua_per_prodreg_prep5 %>% 
+  mutate(municip_number = replace(municip_number,
+                                  municip_number == 1544,
+                                  1502)) %>% 
+  mutate(municip_number = replace(municip_number,
+                                  municip_number == 1556,
+                                  1560)) %>% 
+  left_join(mcp_prod_prep2[,c(
+    "municip_number",
+    "municip_name",
+    "total_mcp_area",
+    "sea_mcp_area",
+    "prod_area_id",
+    "prod_area_name"
+  )],
+  by = "municip_number")
+```
+
+And check non-matches again:
+```{r}
+filter(aqua_per_prodreg_prep7, is.na(prod_area_name))
+```
+I am not sure about these two municipalities, why there are not in the production areas table. For now, I just remove them. Again, I have to replace zeros back with NAs.
+
+```{r}
+aqua_per_prodreg_final <-
+  aqua_per_prodreg_prep7 %>% 
+  filter(!is.na(prod_area_name)) %>% 
+  group_by(year, county, prod_area_name,prod_area_id ) %>% 
+  summarize(production_per_region = sum(production_final, na.rm=T)) %>% 
+  mutate(production_per_region = replace(production_per_region, 
+                                    production_per_region == 0, 
+         NA))
+  
+```
+
+Save the production areas and aquaculture production table and the final aquaculture yield table per production area
+```{r}
+write.csv(aqua_per_prodreg_prep7, "data/annual_aqua_production_per_mcp_and_prodregion.csv", row.names = F)
+write.csv(aqua_per_prodreg_final, "data/annual_aqua_production_sum_per_prodregion.csv", row.names = F)
+```
+
