@@ -9,14 +9,15 @@ output:
     toc_float: true
     number_sections: true
     theme: cerulean
+    highlight: haddock
     includes: 
       in_header: 
   pdf_document:
     toc: true
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
 source('~/github/coastrisk/src/common.r')
 ```
 
@@ -155,12 +156,12 @@ aqua_prep6 <- aqua_prep5 %>%
   select(-nonzero_records) 
 ```
 
-For how many rows of data there is NA in biomass change? 196, these are observations from 2005, when no previous year biomass data is available and some cases, where a municipality did not have production in the previous year. 
+For how many rows of data there is NA in biomass change? 196, these are observations from 2005, when no previous year biomass data is available and in some cases, where a municipality did not have production in the previous year. 
 ```{r}
 sum(is.na(aqua_prep6$biomchange_salmon))
 ```
 
-For these 196 cases, I have to calculate biomass change differently. Since I cannot subtract December from the previous year December,I look at the values of the given year only, and take the difference of the latest month and the earliest month with data (like if production started in February and continued through December of the give year).
+For these 196 cases, I have to calculate biomass change differently. Since I cannot subtract December from the previous year December,I look at the values of the given year only, and take the difference of the latest month and the earliest month with data (like if production started in February and continued through December of the given year).
 Here is the function to calculate biomass change for these 196 cases:
 
 ```{r}
@@ -318,7 +319,7 @@ write.csv(aqua_final, "data/annual_aqua_production_per_mcp.csv", row.names = F)
 
 # Calculating aquaculture yield per each of 13 production areas
 Load the table on municipalities and production areas they are located in.
-NB!! Municipalities' numbers in this file and in the aquaculture production table are both per 2019 (not including changes of 2020). 
+NB!! Municipalities' numbers in the production areas table are as of 2019 (not including changes of 2020). 
 ```{r}
 mcp_prod <- read.csv(file.path("/Volumes/ftp.imr.no/ProductionAreas/municipality_productionarea.csv"),sep = " ")
 ```
@@ -349,7 +350,7 @@ mcp_prod_prep <- mcp_prod %>%
   )
 ```
 
-Then I also correct the municipality number - where it has only 3 digits, should be  zero in front. Importantly, the table with municipalities and their production regions use municipalities numbers as they were before 2020. But for Trondelag, the municipalities numbers are as they were after 2018. However, the aquaculture production table uses a mix of both old and new numbers (as FISKEDIR explained this is a mistake, there is a confusion with municiaplities's numbers and they cannot fix that).
+Then I also correct the municipalities' numbers - where it has only 3 digits, should be  zero in front. Importantly, the table with municipalities and their production regions use municipalities numbers as they were before 2020. But for Trondelag, the municipalities numbers are as they were after 2018. However, the aquaculture production table uses a mix of both old and new numbers (as FISKEDIR explained this is a mistake, there is a confusion with municiaplities' numbers and they cannot fix that).
 
 ```{r}
 mcp_prod_prep2 <- mcp_prod_prep %>% 
@@ -378,11 +379,11 @@ aqua_per_prodreg <- aqua_final %>%
 
 Municipalities that had new numbers as of 2020, did not have a match in production area table. But what are they? 
 ```{r}
-View(filter(aqua_per_prodreg, is.na(prod_area_id)))
+filter(aqua_per_prodreg, is.na(prod_area_id))
 ```
 
 It is difficult to replace 2020 municipalities' numbers with older ones, because some municipalities merged. For instance, there is municipality 1108 - Sandnes,in the aquaculture table, but new Sandnes was made of merging old Sandnes with 1102 number and Forsand 1129. There is a municipality 1108 in years 2011, 2012, 2013, but which one it is? Sandnes old or Forsand? Or both? And why along with this municipality there is also old Sandnes 1102 in the same year - 2011? 
-FISKEDIR explained they cannot help solve this confusion with municipalities' numbers, so just have to assume that the "knew" municipality, is one of the older ones.
+FISKEDIR explained they cannot help solve this confusion with municipalities' numbers, so I just have to assume that the "knew" municipality, is one of the older ones.
 
 ## Fixing municipalities' numbers in the aquaculture production table
 Import the table of new and old municipalities' names and numbers
@@ -452,7 +453,7 @@ Now we need to add old municipalities' numbers to the aquaculture production tab
 
 ```{r}
 aqua_per_prodreg_prep2 <- aqua_final %>% 
-  left_join(convert_mcp_prep2[,c("municip_number_old",
+  left_join(convert_mcp_prep3[,c("municip_number_old",
                                  "municip_number_new")]
 ,
   by = c("municip_number" = "municip_number_new")) %>% 
@@ -528,13 +529,13 @@ aqua_per_prodreg_prep6 <- aqua_per_prodreg_prep5 %>%
 filter(aqua_per_prodreg_prep6, is.na(prod_area_name))
 ```
 
-1544 - is a former Bolsoy kommune, since 1960's it is Molde 1502
-1556 - is a former Brei municipality, 1960's Tingvoll 1560
-0438 - Avdal , since 2020 it is 3428 Alvdal,
-0436 - Tolga, since 3426 Tolga
+* 1544 - is a former Bolsoy kommune, since 1960's it is Molde 1502
+* 1556 - is a former Brei municipality, 1960's Tingvoll 1560
+* 0438 - Avdal , since 2020 it is 3428 Alvdal,
+* 0436 - Tolga, since 3426 Tolga
 
-Molde 1502 and Tingvoll 1560 have matches in produciton areas, but the 0438 and 0436 municipalities are not there, neither under new nor under old numbers.
-Do merging again but replaceing 1544 municipality's number and 1556 with 1502 and 1560, respectively.
+Molde 1502 and Tingvoll 1560 have matches in production areas, but the 0438 and 0436 municipalities are not there, neither under new nor under old numbers.
+Do merging again but replacing 1544 municipality's number and 1556 with 1502 and 1560, respectively.
 ```{r}
 aqua_per_prodreg_prep7 <- aqua_per_prodreg_prep5 %>% 
   mutate(municip_number = replace(municip_number,
