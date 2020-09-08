@@ -1,0 +1,123 @@
+---
+title: "Plotting_aquaculture_production"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: haddock
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r}
+library(sf)
+library(mapdata)
+library(maptools)
+library(rgdal)
+library(rgeos)
+library(maps)
+library(rnaturalearth)
+library(rnaturalearthdata)
+```
+
+# Loading data: aquaculture yield per region and regions geometry
+```{r}
+aqua_prod <-read.csv(file.path("./data/annual_aqua_production_sum_per_prodregion.csv"))
+```
+
+```{r}
+prod_areas <- readOGR(dsn = "/Volumes/ftp.imr.no/ProductionAreas/OGRgeoJSON_prodomr")
+```
+Check the coordinate reference system of the production areas shape file
+```{r}
+crs(prod_areas)
+```
+
+# Plotting aquaculture production per year and produciton region
+## Create a theme for aquaculture production plots
+```{r}
+theme_akva <- function(...) {
+  theme_hc() +
+    theme(
+      axis.text.x = element_text(
+        size = 12, angle = 90, hjust = 1, vjust = 0.5,
+        face = "italic", color = "grey51"
+      ),
+      axis.text.y = element_text(size = 10, angle = 0, face = "italic", color = "grey51"),
+      axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0), face = "italic", size = 12, color = "grey22"),
+      plot.title = element_text(hjust = 0.5, vjust = 0.5),
+      axis.ticks.x = element_line(size = 0.2),
+      axis.ticks.length = unit(0.1, "cm"),
+      #axis.line.x = element_line(size = 0.3, color = "black"),
+      strip.text = element_text(size = 12, face = "italic", color = "grey22"),
+      strip.background = element_rect(fill = "white", color ="white"),
+      panel.background = element_rect(fill = "white"),
+      plot.background = element_rect(fill = "white"),
+      panel.grid.major.y = element_line(color = "grey", size = 0.2),
+      panel.grid.major.x = element_line(color = "grey", size = 0.2)
+     
+    )
+}
+```
+
+
+Prepare x-axis with years and the breaks between them
+```{r}
+breaks1 <- seq(2000, 2020, by = 1)
+labels1 <- as.character(breaks1)
+labels1[!breaks1 %% 2 == 0] <- ""
+
+breaks2 <-seq(0,250000,by = 50000)
+labels2 <- imap_chr(breaks2, function(., id){
+  return(paste0(formatC(breaks2[id], format="f", big.mark="," , digits = 0),
+                             ""))
+})
+```
+
+## Prepare the aquaculture data for plotting
+The production values are in kg, I will divide them all by 1000 and present as tons.
+```{r}
+aqua_prod_prep2 <- aqua_prod %>% 
+  mutate(production_tons = production_per_region/1000)
+```
+
+
+
+```{r}
+plot1 <-ggplot(
+  data = aqua_prod_prep2,
+  mapping = aes(x = year,
+                y = production_tons)
+) +
+  geom_line(color = "mediumblue", size = 1.1, alpha = 0.7) +
+  facet_wrap(prod_area_name ~ .) +
+  scale_x_continuous(limits = c(2000, 2020), breaks = breaks1, labels = labels1) +
+  scale_y_continuous(breaks = breaks2, labels = labels2) +
+  labs(y = "Annual aquaculture yield, tons", x = "") +
+  geom_hline(yintercept = 0, color = "black", size = 0.3) +
+  theme_akva()
+```
+
+
+```{r fig.width = 4, fig.height = 3, dpi = 300}
+plot1
+```
+```{r}
+ggsave("figs/aqua_yield_per_prodregion.pdf", plot = plot1, width = 10, height =  8, dpi = 300)
+```
+
+
+
+
+3) Plot a production in year 2005 and 2018 to compare, per region.
