@@ -465,7 +465,7 @@ aqua_per_prodreg_prep2 <- aqua_final %>%
 
 There are still 148 rows with negative production, for now I will replace those negative values with NA. Replacing with zero is not correct - there was a produced biomass, but we don't know how much.Then I will take a sum of productions for municipalities that occur under old and new numbers (example - Sandnes 1108 and Sandnes 1102).
 The sum of two negative production values (NA plus NA) will return zero, so I will replace those zeroes with NA again. 
-Also, I remove leading white space in the old municipalities'numbers
+Also, I remove leading white space in the old municipalities' numbers
 
 ```{r}
 aqua_per_prodreg_prep3 <- aqua_per_prodreg_prep2 %>% 
@@ -565,7 +565,7 @@ I am not sure about these two municipalities, why there are not in the productio
 aqua_per_prodreg_final <-
   aqua_per_prodreg_prep7 %>% 
   filter(!is.na(prod_area_name)) %>% 
-  group_by(year, county, prod_area_name,prod_area_id ) %>% 
+  group_by(year, prod_area_name,prod_area_id ) %>% 
   summarize(production_per_region = sum(production_final, na.rm=T)) %>% 
   mutate(production_per_region = replace(production_per_region, 
                                     production_per_region == 0, 
