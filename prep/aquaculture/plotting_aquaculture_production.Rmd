@@ -29,6 +29,7 @@ library(rgeos)
 library(maps)
 library(rnaturalearth)
 library(rnaturalearthdata)
+library(stringr)
 ```
 
 # Loading data: aquaculture yield per region and regions geometry
@@ -36,9 +37,16 @@ library(rnaturalearthdata)
 aqua_prod <-read.csv(file.path("./data/annual_aqua_production_sum_per_prodregion.csv"))
 ```
 
+Check for which prod_area*year combination we do not have aquaculture yield value: Ost-Finnmark in 2012. There, the total annual aquaculture yield was negative, and I considered that as missing data (we don't know the real yield value).
+```{r}
+filter(aqua_prod, is.na(production_per_region))
+```
+
+
 ```{r}
 prod_areas <- readOGR(dsn = "/Volumes/ftp.imr.no/ProductionAreas/OGRgeoJSON_prodomr")
 ```
+
 Check the coordinate reference system of the production areas shape file
 ```{r}
 crs(prod_areas)
@@ -117,7 +125,157 @@ plot1
 ggsave("figs/aqua_yield_per_prodregion.pdf", plot = plot1, width = 10, height =  8, dpi = 300)
 ```
 
+# Mapping aquacultlure yield per produciton reigon
+We have 13 years of data, and it would be difficult to plot them all. I will plot only the first and the last year of data series - 2005 and 2018, to identify temporal changes.
+
+```{r}
+prodareas_sf <- st_as_sf(prod_areas, coords= c("long", "lat"), agr="identity")
+```
+
+Now we need to merge the table of geometries of production regions and the aquaculture yield tables. The names of production regions are written differently in the two tables, so I have to homogenize them first.
+
+```{r}
+
+prodareas_sf_prep2 <- prodareas_sf %>% 
+   mutate(
+    prod_area_name = str_replace_all(
+      name, pattern = "->", replacement = "-"
+    )
+  ) %>% 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = fixed("+"), replacement = "-"
+    )
+  ) %>% 
+  select(-name)
+```
+
+I merge the two tables and transform production from kg to tons:
+```{r}
+plot_aquaprod <- left_join(
+  aqua_prod,
+  prodareas_sf_prep2, 
+  by = "prod_area_name") %>% 
+  mutate(production_tons = production_per_region/1000) %>% 
+  select(-id) %>% 
+  st_as_sf(.)
+```
 
 
 
-3) Plot a production in year 2005 and 2018 to compare, per region.
+
+## Map aquaculture production for 2005
+
+```{r}
+#https://gotellilab.github.io/GotelliLabMeetingHacks/NickGotelli/ColorPalettes.html
+
+addalpha <- function(colors, alpha=0.7) {
+  r <- col2rgb(colors, alpha=T)
+  # Apply alpha
+  r[4,] <- alpha*255
+  r <- r/255.0
+  return(rgb(r[1,], r[2,], r[3,], r[4,]))
+}
+
+cols <- addalpha(brewer.pal(5, "Purples"))
+```
+
+
+```{r}
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+```
+
+
+I will use the same breaks of production values as for line chart, but I will make them as intervals.
+```{r}
+#, 50000, 100000, 150000, 200000
+breaks3 <-seq(0,250000,by = 50000)
+labels3 <- imap_chr(breaks2, function(., id){
+  return(paste0(formatC(breaks2[id], format="f", big.mark="," , digits = 0),
+                             "",
+                            " – ",
+                             formatC(breaks2[id + 1], format="f", big.mark="," , digits = 0),
+                             ""))
+})
+
+labels3 <- labels3[1:length(labels3) - 1] #5 intervals in total
+```
+
+There is one value of production in tons which fall out of the bound - 250452, i will replace it with 250000, because for the aesthetics of the map it is better (and more precise values can be read from line chart).
+```{r}
+plot_aquaprod_prep2  <- plot_aquaprod %>% 
+  filter(!is.na(production_tons)) %>% 
+  mutate(production_tons = 
+           replace(production_tons,
+                   production_tons >= 250000,
+                   250000)) %>% 
+  mutate(prod_quantiles = cut(production_tons,
+                               breaks = breaks2,
+                               labels = labels3,
+                               include.lowest = T))
+```
+
+
+```{r}
+base_map <- ggplot() +
+  geom_sf(
+   data = world, 
+   fill = "antiquewhite1", 
+   color = "dimgray", 
+   size = 0.3) +
+  theme(axis.text.x = element_text(size = 10,  color = "grey51"),
+        axis.text.y = element_text(size = 10,  color = "grey51"),
+        legend.text = element_text(size = 15),
+        legend.title = element_text(size = 15,  face = "bold"),
+        panel.background = element_rect(fill = "aliceblue") ,
+        panel.grid.major = element_line(color = "#dbdbd9", linetype = "dashed", size = 0.2),
+        plot.title = element_text(hjust = 0.5, vjust = 0.5, size = 17, face = "bold"),
+        strip.text = element_text(size = 13, face = "italic", color = "grey24"),
+        strip.background = element_rect(fill = "white", color ="white"),
+  ) +
+  scale_x_continuous(breaks = c(5,15,25)) +
+  geom_sf(
+    data = plot_aquaprod_prep2,
+    mapping = aes(fill = prod_quantiles),
+    color = "white",
+    size = 0.2
+  ) +
+  coord_sf(xlim = c(2, 34), ylim = c(55, 72), expand = FALSE) +
+  labs(x = "Longitude", y = "Latitude") +
+  scale_fill_manual(
+    values = cols,
+    name = "Aquaculture yield, 1000 tons",
+    guide = guide_legend(
+      keyheight = unit(9, units = "mm"),
+      title.position = "top"
+    )
+  ) +
+  facet_wrap(year ~.) +
+  labs(
+    x = NULL,
+    y = NULL
+  ) 
+
+```
+
+Add the id of each production region
+```{r}
+prodareas_names <- cbind(plot_aquaprod_prep2,st_coordinates(st_centroid(plot_aquaprod_prep2)))
+```
+
+```{r}
+main_map <-base_map +
+  geom_sf_text(data = prodareas_names, aes(X,Y, label = prod_area_id),fontface = "bold", size = 3) 
+```
+
+```{r, fig.width=10, fig.height=7}
+main_map
+```
+```{r}
+ggsave("./figs/aqua_yield_maps_per_prodarea.tiff", main_map, width = 12, height = 14, dpi = 300)
+
+```
+
+
+
