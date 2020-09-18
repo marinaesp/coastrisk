@@ -68,7 +68,7 @@ theme_akva <- function(...) {
       axis.ticks.x = element_line(size = 0.2),
       axis.ticks.length = unit(0.1, "cm"),
       #axis.line.x = element_line(size = 0.3, color = "black"),
-      strip.text = element_text(size = 12, face = "italic", color = "grey22"),
+      strip.text = element_text(size = 11, face = "italic", color = "grey22"),
       strip.background = element_rect(fill = "white", color ="white"),
       panel.background = element_rect(fill = "white"),
       plot.background = element_rect(fill = "white"),
@@ -97,11 +97,14 @@ labels2 <- imap_chr(breaks2, function(., id){
 The production values are in kg, I will divide them all by 1000 and present as tons.
 ```{r}
 aqua_prod_prep2 <- aqua_prod %>% 
-  mutate(production_tons = production_per_region/1000)
+  mutate(production_tons = production_per_region/1000) %>% 
+  mutate(prod_area_name_n_code = 
+           str_c(prod_area_id, ":", " ", prod_area_name)
+  ) 
 ```
 
 
-
+## Plot aquaculture yield as line grapth
 ```{r}
 plot1 <-ggplot(
   data = aqua_prod_prep2,
@@ -109,7 +112,10 @@ plot1 <-ggplot(
                 y = production_tons)
 ) +
   geom_line(color = "mediumblue", size = 1.1, alpha = 0.7) +
-  facet_wrap(prod_area_name ~ .) +
+  geom_point(color = "mediumblue", size = 0.8, alpha = 0.7) +
+  facet_wrap(fct_reorder(prod_area_name_n_code, 
+                         prod_area_id,
+                         min) ~ .) +
   scale_x_continuous(limits = c(2000, 2020), breaks = breaks1, labels = labels1) +
   scale_y_continuous(breaks = breaks2, labels = labels2) +
   labs(y = "Annual aquaculture yield, tons", x = "") +
@@ -124,6 +130,8 @@ plot1
 ```{r}
 ggsave("figs/aqua_yield_per_prodregion.pdf", plot = plot1, width = 10, height =  8, dpi = 300)
 ```
+
+
 
 # Mapping aquacultlure yield per produciton reigon
 
