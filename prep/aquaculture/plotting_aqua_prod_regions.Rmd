@@ -1,0 +1,127 @@
+---
+title: "Plotting aquaculture production regions"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: haddock
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r inlcude=FALSE}
+library(sf)
+library(mapdata)
+library(maptools)
+library(rgdal)
+library(rgeos)
+library(maps)
+library(rnaturalearth)
+library(rnaturalearthdata)
+```
+
+# Preparing data for mapping
+Here i want to plot the aquaculture production regions, to use this map in the coastrisk paper 1. There will be no more other information on the map, just the regions with their id numbers.
+
+```{r}
+prod_areas <- readOGR(dsn = "/Volumes/ftp.imr.no/ProductionAreas/OGRgeoJSON_prodomr")
+```
+
+```{r}
+prodareas_sf <- st_as_sf(prod_areas, coords= c("long", "lat"), agr="identity")
+```
+
+I will first make the names of the regions cleaner, and in the same way they are written in aquaculture maps
+
+```{r}
+prodareas_sf_prep2 <- prodareas_sf %>% 
+   mutate(
+    prod_area_name = str_replace_all(
+      name, pattern = "->", replacement = "-"
+    )
+  ) %>% 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = fixed("+"), replacement = "-"
+    )
+  ) %>% 
+  select(-name)
+```
+
+
+# Mapping the production regions
+```{r}
+world <- ne_countries(scale = "medium", returnclass = "sf")
+```
+
+```{r}
+base_map <- ggplot() +
+  geom_sf(
+   data = world, 
+   fill = "antiquewhite1", 
+   color = "dimgray", 
+   size = 0.3) +
+  theme(axis.text.x = element_text(size = 10,  color = "grey51"),
+        axis.text.y = element_text(size = 10,  color = "grey51"),
+        legend.text = element_text(size = 15),
+        legend.title = element_text(size = 15,  face = "bold"),
+        panel.background = element_rect(fill = "aliceblue") ,
+        panel.grid.major = element_line(color = "#dbdbd9", linetype = "dashed", size = 0.2),
+        plot.title = element_text(hjust = 0.5, vjust = 0.5, size = 17, face = "bold")
+  ) +
+  scale_x_continuous(breaks = c(5,10,15,20, 25,30)) +
+  geom_sf(
+    fill = NA,
+    data = prodareas_sf_prep2,
+    color = "midnightblue",
+    size = 0.8
+  ) +
+  coord_sf(xlim = c(2, 34), ylim = c(55, 75), expand = FALSE) +
+  labs(x = "Longitude", y = "Latitude") +
+  labs(
+    x = NULL,
+    y = NULL
+  ) 
+
+```
+
+Adding id's of production region superimposed on the map. The 1st region does not plot the label very well, it is plotted on the border with region 2.
+I will manually adjust the coordinates of a centroid for id.
+```{r}
+prodareas_names <- cbind(prodareas_sf_prep2,st_coordinates(st_centroid(prodareas_sf_prep2)))
+
+prodareas_names_prep2 <- prodareas_names %>% 
+  st_set_geometry(., NULL) %>% 
+  mutate(Y = replace(
+    Y,
+    prod_area_name == "Svenskegrensen - Jæren",
+    58.2
+  )) %>% 
+  st_as_sf(.,  coords = c("X", "Y"), crs = 4326, remove = FALSE, agr = "identity")
+
+```
+
+
+```{r}
+main_map <- base_map +
+  geom_sf_text(data = prodareas_names_prep2,
+    aes(X,Y,label = id), fontface = "bold", size = 5)
+              
+```
+
+```{r}
+ggsave("./figs/aquaprod_regions.pdf", main_map, width = 6, height = 10, dpi = 300)
+
+```
