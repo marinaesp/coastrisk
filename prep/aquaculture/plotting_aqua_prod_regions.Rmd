@@ -123,5 +123,90 @@ main_map <- base_map +
 
 ```{r}
 ggsave("./figs/aquaprod_regions.pdf", main_map, width = 6, height = 10, dpi = 300)
+```
 
+# Plotting aquaculture production regions and fisheries statistics areas together
+loading shapefiles of fisheries statistic areas
+```{r}
+fish_areas <- readOGR(dsn = "/Volumes/ftp.imr.no/fisheries_data/fisheries_statistic_areas")
+```
+Check the coordinate reference system of fisheries areas:they are in UTM, not in long-lat. I will need to transform the coordinates so that production areas and fisheries areas are in the same projection (WGS84, with a code 4326).
+```{r}
+crs(fish_areas)
+```
+
+```{r}
+fishareas_sf <- st_as_sf(fish_areas)
+fishareas_sf_prep2 <- st_transform(fishareas_sf, crs = 4326)
+```
+
+## Map
+Base map will be similar to the previous one, but i  will extend the coordinates.
+
+```{r}
+base_map2 <- ggplot() +
+  geom_sf(
+   data = world, 
+   fill = "antiquewhite1", 
+   color = "dimgray", 
+   size = 0.3) +
+  theme(axis.text.x = element_text(size = 10,  color = "grey51"),
+        axis.text.y = element_text(size = 10,  color = "grey51"),
+        legend.text = element_text(size = 15),
+        legend.title = element_text(size = 15,  face = "bold"),
+        panel.background = element_rect(fill = "aliceblue") ,
+        panel.grid.major = element_line(color = "#dbdbd9", linetype = "dashed", size = 0.2),
+        plot.title = element_text(hjust = 0.5, vjust = 0.5, size = 17, face = "bold")
+  ) +
+  scale_x_continuous(breaks = c(0,5,10,15,20, 25,30)) +
+  geom_sf(
+    fill = NA,
+    data = prodareas_sf_prep2,
+    color = "midnightblue",
+    size = 0.7
+  ) +
+  coord_sf(xlim = c(0, 34), ylim = c(55, 75), expand = FALSE) +
+  labs(x = "Longitude", y = "Latitude") +
+  labs(
+    x = NULL,
+    y = NULL
+  ) 
+
+```
+
+Adding fisheries statistics areas on the top of aquaculture production areas
+```{r}
+main_map2 <- base_map2 + geom_sf(
+    fill = NA,
+    data = fishareas_sf_prep2,
+    color = "darkred",
+    size = 0.3,
+    linetype = "dotted"
+  ) +
+   coord_sf(xlim = c(0, 34), ylim = c(55, 75), expand = FALSE)
+  
+```
+
+Save this version of the map - without any labels
+```{r}
+ggsave("./figs/fishareas_n_aquaprod_regions.pdf", main_map2, width = 8, height = 9, dpi = 300)
+```
+
+
+Adding the names of regions and fisheries polygons (although, they won't be very clear - too many polygons). In the same way as for production areas - calculate centroids and bind them to sf dataframe.
+```{r}
+fishareas_names <- cbind(fishareas_sf_prep2,st_coordinates(st_centroid(fishareas_sf_prep2)))
+```
+```{r}
+main_map3 <-
+  main_map2 +
+  geom_sf_text(data = prodareas_names_prep2,
+    aes(X,Y,label = id), fontface = "bold", size = 4, color = "midnightblue") +
+  geom_sf_text(data = fishareas_names,
+               aes(X,Y, label = Lokasjon),fontface = "bold", size = 2, color = "darkred" )
+  
+```
+
+```{r}
+ggsave("./figs/fishareas_n_aquaprod_regions_labelled.pdf", main_map3, width = 8, height = 9, dpi = 300)
 ```
