@@ -1,0 +1,131 @@
+---
+title: "Calculate the intersection area between aquaprod areas and fisheries polygons"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: haddock
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r inlcude=FALSE}
+library(sf)
+library(mapdata)
+library(maptools)
+library(rgdal)
+library(rgeos)
+library(maps)
+library(rnaturalearth)
+library(rnaturalearthdata)
+```
+
+# Loading the data
+First, we load shapefiles of the aquaculture production areas and fisheries polygons
+
+```{r, results="hide"}
+prod_areas <- readOGR(dsn = "/Volumes/ftp.imr.no/ProductionAreas/OGRgeoJSON_prodomr")
+prodareas_sf <- st_as_sf(prod_areas, coords= c("long", "lat"), agr="identity")
+```
+
+```{r, results="hide", warning=FALSE}
+fish_areas <- readOGR(dsn = "/Volumes/ftp.imr.no/fisheries_data/fisheries_statistic_areas")
+```
+
+
+Check the coordinate reference system of fisheries areas:they are in UTM, not in long-lat. I will need to transform the coordinates so that production areas and fisheries areas are in the same projection (WGS84, with a code 4326).
+```{r}
+crs(fish_areas)
+```
+
+```{r}
+fishareas_sf <- st_as_sf(fish_areas)
+fishareas_sf_prep2 <- st_transform(fishareas_sf, crs = 4326)
+```
+
+I first make the names of the aquaculture production regions cleaner, and in the same way they are written in aquaculture maps
+
+```{r}
+prodareas_sf_prep2 <- prodareas_sf %>% 
+   mutate(
+    prod_area_name = str_replace_all(
+      name, pattern = "->", replacement = "-"
+    )
+  ) %>% 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = fixed("+"), replacement = "-"
+    )
+  ) %>% 
+  select(-name)
+```
+
+
+# Calculating inersection area between fisheries polygons and aquaprod areas
+Calculate the area of intersection in m^2. I will change that to km^2 to avoid very large area values.
+```{r}
+intersection_aquaprod_fishpol <- st_intersection(prodareas_sf_prep2, fishareas_sf_prep2)
+
+intersection_aquaprod_fishpol$area_of_intersection <- st_area(intersection_aquaprod_fishpol) 
+intersection_aquaprod_fishpol$area_of_intersection <- units::set_units(intersection_aquaprod_fishpol$area_of_intersection, km^2)
+
+# get rid of units in the area column, we know that they are in m^2.
+attributes(intersection_aquaprod_fishpol$area_of_intersection) = NULL
+
+```
+
+# Calculating proportion of fisheries polygons within aquaprod areas
+
+Now we can calculate the proportion of fisheries polygons that is in the aquaculture production area.
+We calculate this proportion only for the fisheries polygons that intersect with aquaculture production area. 
+We need to join the table with intersection area with a fisheries polygons table to get the area of each polygon. Note, that i will make the table with areas a data.frame object (currently it is an sf object). This is necessary to apply `dplyr` data cleaning functions on this table.
+First, we will need to transform the area of fisheries polygons to km^2.
+
+The precision of area of fisheries polygons and area of intersection calculated by sf is different, to avoid mistakes, i just round up both variables to the whole number. Otherwise, we can get proportion of fisheries area within an aquaculture area larger than 1.
+
+```{r}
+intersection_aquaprod_fishpol_prep2 <- intersection_aquaprod_fishpol %>%
+  mutate(area_of_intersection_km2 = area_of_intersection) %>%
+  st_set_geometry(., NULL) %>%
+  select(-area_of_intersection) %>%
+  mutate(fishpol_area_km2 = Shape__Are/1000000) %>% 
+  mutate(across(c("fishpol_area_km2", "area_of_intersection_km2"), ~ round(.x, digits = 4)))  %>% 
+  mutate(proportion_fishpol_in_aqupaprod = area_of_intersection_km2/fishpol_area_km2) 
+```
+
+There are still proportions larger than 1 and some that are 0.95-0.99 when essentially, the whole fisheries polygon lies within an aquaculture productive area. I will take 0.95 proportion as a threshold and consider all proportionS larger than 0.95 as 1.
+
+```{r}
+intersection_aquaprod_fishpol_prep3 <-intersection_aquaprod_fishpol_prep2  %>% 
+  mutate(proportion_fishpol_in_aqupaprod = round(proportion_fishpol_in_aqupaprod, digits = 4)) %>% 
+  mutate(proportion_fishpol_in_aqupaprod = ifelse(proportion_fishpol_in_aqupaprod >= 0.95,
+                                                  1,
+                                                  proportion_fishpol_in_aqupaprod
+                                                  )) %>% 
+  select(-c(Shape__Are,
+            Shape__Len)) %>% 
+  rename(aquaprod_id = id,
+         aquaprod_area_name = prod_area_name)  %>% 
+  janitor::clean_names(.)
+  
+```
+
+Where the proportion of fisheries polygon inside the aquaculture production area is zero, it means that the intersection was very small such that the proportion is less than 0.0001. These intersection can be considered as practically "no intersection" between the fisheries polygon and aquaculture production area.
+
+Save the final table:
+```{r}
+write.csv(intersection_aquaprod_fishpol_prep3, file = here::here("prep", "aquaculture", "data", "porportion_fishpol_in_aquaprod_areas.csv"))
+```
+
