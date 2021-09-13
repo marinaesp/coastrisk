@@ -383,7 +383,7 @@ filter(aqua_per_prodreg, is.na(prod_area_id))
 ```
 
 It is difficult to replace 2020 municipalities' numbers with older ones, because some municipalities merged. For instance, there is municipality 1108 - Sandnes,in the aquaculture table, but new Sandnes was made of merging old Sandnes with 1102 number and Forsand 1129. There is a municipality 1108 in years 2011, 2012, 2013, but which one it is? Sandnes old or Forsand? Or both? And why along with this municipality there is also old Sandnes 1102 in the same year - 2011? 
-FISKEDIR explained they cannot help solve this confusion with municipalities' numbers, so I just have to assume that the "knew" municipality, is one of the older ones.
+FISKEDIR explained they cannot help solve this confusion with municipalities' numbers, so I just have to assume that the "new" municipality, is one of the older ones.
 
 ## Fixing municipalities' numbers in the aquaculture production table
 Import the table of new and old municipalities' names and numbers
@@ -532,7 +532,7 @@ filter(aqua_per_prodreg_prep6, is.na(prod_area_name))
 * 1544 - is a former Bolsoy kommune, since 1960's it is Molde 1502
 * 1556 - is a former Brei municipality, 1960's Tingvoll 1560
 * 0438 - Avdal , since 2020 it is 3428 Alvdal,
-* 0436 - Tolga, since 3426 Tolga
+* 0436 - Tolga, since 2020 3426 Tolga
 
 Molde 1502 and Tingvoll 1560 have matches in production areas, but the 0438 and 0436 municipalities are not there, neither under new nor under old numbers.
 Do merging again but replacing 1544 municipality's number and 1556 with 1502 and 1560, respectively.
@@ -577,5 +577,193 @@ Save the production areas and aquaculture production table and the final aquacul
 ```{r}
 write.csv(aqua_per_prodreg_prep7, "data/annual_aqua_production_per_mcp_and_prodregion.csv", row.names = F)
 write.csv(aqua_per_prodreg_final, "data/annual_aqua_production_sum_per_prodregion.csv", row.names = F)
+```
+
+
+# Produciton-based variables: mortality, stsanding biomass, escapees, feed consumption
+
+First, I will prepare a common table, a produciton-based table merged with production areas, and then from that table I will derive a data set for each variable.
+
+
+## Common table
+
+NB! I use the production table where duplicated rows are removed, and where are the rows that are quality checked by FISKEDIR and that have maximal number of non-zero observations. See chunks 39-41 for details.
+I remove the columns we don't need and merge this table with production areas
+I need to do the same manipulations wiht municipalities' numbers as for production data to be able to merge standing biomass and production areas tables
+```{r}
+common <-aqua_prep5 |> 
+  select(-c(fylke_kode,
+            gjennomgatt,
+            utsatt_smolt_stk,
+            utsatt_totalt_stk,
+            tap_utkast_stk,
+            tap_annet_stk,
+            uttak_slakt_kg,
+            uttak_levende_kg,
+            nonzero_records))  |> 
+  rename(municip_number = komnr) |> 
+  mutate(municip_number =
+           ifelse(
+             str_count(municip_number, pattern = regex("[:digit:]")) == 3,
+                       str_c("0",municip_number),
+                       municip_number
+             )
+         )
+  
+```
+
+Add new municipalities' numbers
+```{r}
+common_prep <- common |> 
+  left_join(convert_mcp_prep3[,c("municip_number_old",
+                                 "municip_number_new")]
+,
+  by = c("municip_number" = "municip_number_new")) %>% 
+  mutate(municip_number_old = ifelse(is.na(municip_number_old),
+                                           municip_number,
+                                           municip_number_old)) %>% 
+  select(-municip_number) |> 
+  mutate(
+  municip_number_old = str_trim(municip_number_old)) 
+  
+  
+```
+
+Now add new numbers (after year 2018) for Trondelag
+```{r}
+common_prep2  <-  common_prep |> 
+  filter(fylke == "TRØNDELAG") |> 
+  left_join(convert_mcp_prep3[,c("municip_number_old", "municip_number_new")],
+            by = "municip_number_old") |>  
+  mutate(municip_number = municip_number_new) |>  
+  select(-c(municip_number_old,municip_number_new)) 
+
+```
+
+Combine Trondelag with the other municipalities in the aquaculture production table
+```{r}
+common_prep3 <- common_prep %>%
+  filter(!fylke == "TRØNDELAG") %>% 
+  rename(municip_number = municip_number_old) %>% 
+  bind_rows(., common_prep2)
+  
+```
+
+
+
+Merging stnding biomass table with a production areas table. See chunk 37 for details.
+I remove 2 observations, for which there is no production area. I was not able to identify, what are these municipalities
+```{r}
+common_prep4 <- common_prep3 %>% 
+  rename(county=fylke) |> 
+  mutate(municip_number = replace(municip_number,
+                                  municip_number == 1544,
+                                  1502)) %>% 
+  mutate(municip_number = replace(municip_number,
+                                  municip_number == 1556,
+                                  1560)) %>% 
+  left_join(mcp_prod_prep2[,c(
+    "municip_number",
+    "municip_name",
+    "total_mcp_area",
+    "sea_mcp_area",
+    "prod_area_id",
+    "prod_area_name"
+  )],
+  by = "municip_number") |> 
+  filter(!is.na(prod_area_name))
+```
+
+
+Next, i will just select the variables of interest of each table and save the tables
+
+## Standing biomass table
+```{r}
+stand_biom <- common_prep4 |> 
+  select(-c(forforbruk_kg,
+            tap_dodfisk_stk,
+            tap_romming_stk)) |> 
+  select(c(year,
+           county,
+           municip_number,
+           municip_name,
+           total_mcp_area,
+           sea_mcp_area,
+           prod_area_id,
+           prod_area_name),
+         everything())
+```
+
+```{r}
+write.csv(stand_biom, "data/standing_biomass_per_mcp_and_prodregion.csv", row.names = F)
+```
+
+
+## Fish mortality table
+```{r}
+fish_mort <- common_prep4 |> 
+  select(-c(forforbruk_kg,
+            laks_jan_beh_kg:regnb_des_beh_kg,
+            tap_romming_stk)) |> 
+  select(c(year,
+           county,
+           municip_number,
+           municip_name,
+           total_mcp_area,
+           sea_mcp_area,
+           prod_area_id,
+           prod_area_name),
+         everything()) |> 
+  rename(died_fish_count = tap_dodfisk_stk)
+```
+
+```{r}
+write.csv(fish_mort, "data/farmed_fish_mortality_per_mcp_and_prodregion.csv", row.names = F)
+```
+
+
+
+## Escapees table
+```{r}
+escaped_fish <- common_prep4 |> 
+  select(-c(forforbruk_kg,
+            laks_jan_beh_kg:regnb_des_beh_kg,
+            tap_dodfisk_stk)) |> 
+  select(c(year,
+           county,
+           municip_number,
+           municip_name,
+           total_mcp_area,
+           sea_mcp_area,
+           prod_area_id,
+           prod_area_name),
+         everything()) |> 
+  rename(escaped_fish_count = tap_romming_stk)
+```
+
+```{r}
+write.csv(escaped_fish, "data/escaped_fish_per_mcp_and_prodregion.csv", row.names = F)
+```
+
+## Feed consumption table
+```{r}
+fforbruk <- common_prep4 |> 
+  select(-c(laks_jan_beh_kg:regnb_des_beh_kg,
+            tap_romming_stk,
+            tap_dodfisk_stk)) |> 
+  select(c(year,
+           county,
+           municip_number,
+           municip_name,
+           total_mcp_area,
+           sea_mcp_area,
+           prod_area_id,
+           prod_area_name),
+         everything()) |> 
+  rename(feed_consumption_kg = forforbruk_kg)
+```
+
+```{r}
+write.csv(fforbruk, "data/feed_consumption_per_mcp_and_prodregion.csv", row.names = F)
 ```
 
