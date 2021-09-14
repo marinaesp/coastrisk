@@ -1,0 +1,164 @@
+---
+title: "Lice count at aquaculture sites"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: haddock
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r additional libraries, inlcude = FALSE}
+library(data.table)
+library(vroom)
+library(rebus)
+library(here)
+```
+
+```{r}
+lus <- read.csv("./data/lakselus_per_fisk_raw.csv", header = TRUE)  
+lus_2005 <-read.csv("~/github/nor-data/aquaculture/lice_vers2_2005_2011_formatted.csv", sep = ",")
+```
+
+
+
+
+# Preliminary data cleaning for 2012-2019 
+```{r}
+colnames(lus) <- c(
+  "week", "year", "location_number", "location_name",
+  "adult_lice", "moving_lice", "sitting_lice", "brakklagt_location", "counted_lice",
+  "municip_number", "municip", "county_number", "county",
+  "lat", "long", "lice_threshold", "above_lice_threshold", "sea_temperature",
+  "prod_area_id", "prod_area_name"
+)
+
+lus_prep <- lus %>%
+  mutate(municip_number = replace(municip_number, location_number == "10893", "1835")) %>%
+  mutate(municip_number = replace(municip_number, location_number == "11087", "1836")) %>%
+  mutate(municip_number = replace(municip_number, location_number == "1915", "1903")) %>%
+  mutate(municip_number = replace(municip_number, location_number == "1901", "1903")) |>
+  mutate(municip = str_to_title(municip))
+
+```
+
+
+
+
+
+```{r}
+#filter out rows where lice threshold is unknown
+lus_prep2 <-lus_prep %>% 
+  filter(above_lice_threshold != "Ukjent") 
+```
+
+
+# Further data cleaning: remove inactive localities and those that did not count lice
+
+Select only locations that were counting lice. 
+
+```{r}
+lus_prep3 <- lus_prep2 %>%
+  filter(counted_lice == "Ja")  |> 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name,c("til" = "-", "og" = "-","med" = "-")
+    )
+  ) 
+```
+
+
+Save the final table
+```{r}
+write.csv(lus_prep3, "./data/output/lice_count_2012_2019.csv")
+```
+
+
+# Cleaning older lice data (2005-2011)
+```{r}
+lus_old_prep <- lus_2005 |> 
+  select(-c("Farmname", "What")) |> 
+  clean_names()
+
+
+```
+
+
+```{r}
+#location 10933 had no municipality info, it is not in the Aquaculture registry,i remove it
+lus_old_prep2 <- lus_old_prep %>% 
+  filter(!is.na(municipality)) |> 
+  rename(municip_number = municipality,
+         location_number = location,
+         sea_temperature = temperature)
+```
+
+## Add production area to old lice data 
+
+```{r}
+mcp_prod <- read.csv(file.path("./data/raw/municipality_productionarea.csv"),sep = " ")
+```
+
+```{r}
+mcp_prod_prep <- mcp_prod %>% 
+  rename(county_number = fylkenummer,
+         municip_number = kommunenummer,
+         municip_name = komname,
+         total_mcp_area = Totalt_areal_inkl_12nm,
+         sea_mcp_area = Havflate_12nm,
+         prod_area_id = id,
+         prod_area_name = name
+         ) %>% 
+  select(-knum) %>% 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = "->", replacement = "-"
+    )
+  ) %>% 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = fixed("+"), replacement = "-"
+    )
+  )
+
+mcp_prod_prep2 <- mcp_prod_prep %>% 
+  mutate(municip_number =
+           ifelse(
+             str_count(municip_number, pattern = regex("[:digit:]")) == 3,
+                       str_c("0",municip_number),
+                       municip_number
+             )
+         )
+```
+
+Merge old lice data and production areas table
+
+```{r}
+lus_old_prep3 <- lus_old_prep2 %>% 
+  mutate(municip_number = as.character(municip_number)) |> 
+  left_join(mcp_prod_prep2[,c(
+    "municip_number",
+    "prod_area_id",
+    "prod_area_name"
+  )],
+  by = "municip_number")
+```
+
+Save the final table
+```{r}
+write.csv(lus_old_prep3, "./data/output/lice_count_2005_2011.csv")
+```
+
