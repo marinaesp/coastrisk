@@ -32,27 +32,20 @@ Here i will prepare a table on MTB (maximal tillat biomasse) per aquaculture pro
 Then i will join this table with production areas, for use in CoastRisk project.
 
 
-
-I have earlier compiled a table of aquaculture locations and their MTB for years 2010-2018. For earlier years, data does not exist
+# Load aquaculture registry data (provided by FISKEDIR in May 2019). There is also no data for year 2016
 ```{r}
-akvareg <- read.csv(read file from nor-data called aqua licenses)
-```
-
-
-# Load aquaculture registry data (provided by FISKEDIR in May 2019)
-```{r}
-year2010 <-read_excel(file.path(dir_M[2], "Aquaculture/Akvakultur_tillatelser_2010_2018/2010-06-28 Register-internett.xlsx"), skip = 1)
-year2011 <-read_excel(file.path(dir_M[2], "Aquaculture/Akvakultur_tillatelser_2010_2018/2011-01-03 Register-internett.xlsx"), skip = 1)
-year2012 <-read_excel(file.path(dir_M[2], "Aquaculture/Akvakultur_tillatelser_2010_2018/2012-12-31 Register-internett.xlsx"),skip = 1)
-year2013 <-read_excel(file.path(dir_M[2], "Aquaculture/Akvakultur_tillatelser_2010_2018/2013-12-30 Akvakulturregisteret.xlsx"),skip = 1)
-year2014 <-read_excel(file.path(dir_M[2], "Aquaculture/Akvakultur_tillatelser_2010_2018/2015-01-05 Akvakulturregisteret.xlsx"),skip = 1)
-year2015 <-read_excel(file.path(dir_M[2], "Aquaculture/Akvakultur_tillatelser_2010_2018/2016-01-11 Akvakulturregisteret.xlsx"),skip = 1)
-year2017 <-read_excel(file.path(dir_M[2], "Aquaculture/Akvakultur_tillatelser_2010_2018/2018-01-01 Akvakulturregisteret.xlsx"),skip = 1)
-year2018 <-read_excel(file.path(dir_M[2], "Aquaculture/Akvakultur_tillatelser_2010_2018/2018-12-31 Akvakulturregisteret.xlsx"),skip = 1)
+year2010 <-read_excel(file.path("/Volumes/ftp.imr.no/Aquaculture/Akvakultur_tillatelser_2010_2018/2010-06-28 Register-internett.xlsx"), skip = 1)
+year2011 <-read_excel(file.path("/Volumes/ftp.imr.no/Aquaculture/Akvakultur_tillatelser_2010_2018/2011-01-03 Register-internett.xlsx"), skip = 1)
+year2012 <-read_excel(file.path("/Volumes/ftp.imr.no/Aquaculture/Akvakultur_tillatelser_2010_2018/2012-12-31 Register-internett.xlsx"),skip = 1)
+year2013 <-read_excel(file.path( "/Volumes/ftp.imr.no/Aquaculture/Akvakultur_tillatelser_2010_2018/2013-12-30 Akvakulturregisteret.xlsx"),skip = 1)
+year2014 <-read_excel(file.path( "/Volumes/ftp.imr.no/Aquaculture/Akvakultur_tillatelser_2010_2018/2015-01-05 Akvakulturregisteret.xlsx"),skip = 1)
+year2015 <-read_excel(file.path("/Volumes/ftp.imr.no/Aquaculture/Akvakultur_tillatelser_2010_2018/2016-01-11 Akvakulturregisteret.xlsx"),skip = 1)
+year2017 <-read_excel(file.path("/Volumes/ftp.imr.no/Aquaculture/Akvakultur_tillatelser_2010_2018/2018-01-01 Akvakulturregisteret.xlsx"),skip = 1)
+year2018 <-read_excel(file.path("/Volumes/ftp.imr.no/Aquaculture/Akvakultur_tillatelser_2010_2018/2018-12-31 Akvakulturregisteret.xlsx"),skip = 1)
 
 ```
 
-Data for all years 2010 - 2017 is not available but we can just use data for 2018 also for 2017, and data for 2015 also for 2014 assuming that changes in the number of licensed aquaculture localities did not change much. 
+I need to homogenize data a bit before merging
 
 ```{r}
 year2010<-year2010 %>% mutate(TILL_KAP = as.numeric(TILL_KAP),
@@ -79,11 +72,215 @@ tillatelser2010_18 <- bind_rows(year2010, year2011, year2012, year2013, year2014
 tillatelser2010_18_nord <- tillatelser2010_18 %>% filter(TILL_KOMNR >= 1800 & TILL_KOMNR <= 2100)
 ```
 
-# Save the csv
+
+# Clean the licences data
+What are the production types that are in the table?
+We will need only the rows related to salmon and trout since only these two types of aquacutlure are included in the project
 ```{r}
-write.csv(tillatelser2010_18_nord, "data/aquaculture_lisences_northnorway_2010_2018.csv")
+unique(tillatelser2010_18$PRODUKSJONSFORM)
 ```
 
-I will not do any more cleaning/aggregating with this data set here, because we may use it for different tasks. 
-Dependeting on the task we will filter and aggregate this data set further.
+But i can also sort by species, it is simpler
+```{r}
+unique(tillatelser2010_18$ART)
+```
+
+```{r}
+str_view(tillatelser2010_18$ART, pattern = "ørret", match = T)#Regnbueørret
+str_view(tillatelser2010_18$ART, pattern = "Ørret", match = T)#Ørret
+```
+
+```{r}
+str_view(tillatelser2010_18$ART, pattern = "Laks", match = T)#Laks
+```
+
+Filter the rows for salmon and trout.
+NB! The table inlcudes main production farms  but also stamfisk and settesfisk
+
+```{r}
+mtb_prep <- tillatelser2010_18 |> 
+  filter(ART %in% c("Laks", "Regnbueørret", "Ørret"))
+```
+
+
+Further data cleaning: remove columns that we don't need, rename columns to English
+
+```{r}
+mtb_prep2 <- mtb_prep |> 
+  select(-c(
+            NAVN,
+            ADRESSE,
+            POSTNR,
+            POSTSTED,
+            TILDELINGSTIDSPUNKT,
+            TIDSBEGRENSET,
+            TILL_KOMNR,
+            TILL_KAP,
+            TILL_KOM,
+            FORMÅL,
+            TILL_ENHET,
+            LOK_PLASS,
+            UTGÅR_DATO)) |> 
+  rename(year = Year,
+         production_form = PRODUKSJONSFORM,
+         species = ART,
+         location_number = LOK_NR,
+         location_name = LOK_NAVN,
+         municip_number = LOK_KOMNR,
+         municip = LOK_KOM,
+         environment = VANNMILJØ,
+         location_capacity = LOK_KAP,
+         units_of_capacity = LOK_ENHET,
+         W_GEOWGS84 =  Ø_GEOWGS84
+         ) |> 
+  select(-2)
+```
+
+# Prepare production areas data
+
+```{r}
+mcp_prod <- read.csv(file.path("./data/raw/municipality_productionarea.csv"),sep = " ")
+```
+
+```{r}
+mcp_prod_prep <- mcp_prod %>% 
+  rename(county_number = fylkenummer,
+         municip_number = kommunenummer,
+         municip_name = komname,
+         total_mcp_area = Totalt_areal_inkl_12nm,
+         sea_mcp_area = Havflate_12nm,
+         prod_area_id = id,
+         prod_area_name = name
+         ) %>% 
+  select(-knum) %>% 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = "->", replacement = "-"
+    )
+  ) %>% 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = fixed("+"), replacement = "-"
+    )
+  )
+
+mcp_prod_prep2 <- mcp_prod_prep %>% 
+  mutate(municip_number =
+           ifelse(
+             str_count(municip_number, pattern = regex("[:digit:]")) == 3,
+                       str_c("0",municip_number),
+                       municip_number
+             )
+         )
+```
+
+
+# Merge mtb table and production areas
+
+```{r}
+mtb_prep3 <- mtb_prep2 |> 
+left_join(mcp_prod_prep2[,c(
+    "municip_number",
+    "municip_name",
+    "prod_area_id",
+    "prod_area_name"
+  )],
+  by = "municip_number")
+```
+
+There were many occasions when production areas did not match municipalities in mtb table
+```{r}
+nonmatches <- mtb_prep3 |> 
+      filter(is.na(prod_area_name)) |> 
+                       group_by(municip_number, municip) |> 
+                       tally()
+
+nonmatches
+      
+```
+
+Bjarkoy municipality merged with Harstad in 2013, so i will just add a new number 1903 and name Harstad. Later, if we want to aggregate all capacities per municipalities, we will just take a sum of capacities in Harstand and Bjarkoy
+
+
+I will make changes in the municipalities' number in the mtb table and will merge again with production areas
+I replace also municipalities' numbers for Trondelad, they are old in the mtb table but new in production areas table
+
+Changes in municipalities' numbers table
+```{r}
+convert_mcp <- read_excel(file.path("../administrative/kommune_endringer_2000_2018.xlsx"))
+
+convert_mcp_prep1 <-convert_mcp %>% 
+  mutate(
+    municip_number_old = str_trim(municip_number_old)) %>% 
+   mutate(
+     municip_number_new = str_trim(municip_number_new)) 
+```
+
+
+
+
+
+Change to a new number: Roros and Rissa (merged with Indre Fossen)
+```{r}
+mtb_prep4 <- mtb_prep2 |> 
+  mutate(municip_number = replace(municip_number, municip_number == "1915", "1903")) |> 
+  mutate(municip_number = replace(municip_number, municip_number == "1901", "1903")) |> 
+  mutate(municip_number = replace(municip_number, municip_number == "1640", "5025")) |> 
+  mutate(municip_number = replace(municip_number, municip_number == "1624", "5024"))
+```
+
+
+```{r}
+foo_trond <- mtb_prep4 |> 
+  filter(municip_number >=1600 & municip_number < 1800) |> 
+  left_join(convert_mcp_prep1[, c(1,3)], 
+            by = c("municip_number" = "municip_number_old")) |> 
+  mutate(municip_number = municip_number_new) |> 
+  select(-municip_number_new)
+```
+
+Merge Trondelag municipalities with others
+
+```{r}
+mtb_prep5 <- mtb_prep4 |> 
+  filter(municip_number >= 1800 | municip_number < 1600) 
+
+mtb_prep6 <- bind_rows(mtb_prep5, foo_trond) |> 
+  left_join(mcp_prod_prep2[,c(
+    "municip_number",
+    "municip_name",
+    "prod_area_id",
+    "prod_area_name"
+  )],
+  by = "municip_number")
+```
+
+And check non-matches again
+```{r}
+sum(is.na(mtb_prep6$prod_area_name))
+
+nonmatches2 <- filter(mtb_prep6, is.na(prod_area_name)) |> 
+  group_by(municip, municip_number) |> 
+  tally()
+
+nonmatches2
+```
+
+These are inland municipalities that do not have matches in production areas table, not sure why. I will leave these rows without changes
+
+
+```{r}
+mtb_final <- mtb_prep6 |> 
+  select(-municip) |> 
+  rename(municip = municip_name) |> 
+  select(year, municip_number, municip, everything())
+```
+
+
+# Save the final table
+```{r}
+write.csv(mtb_final, "./data/output/locations_capacity_2010_2018.csv")
+```
+
+
 
