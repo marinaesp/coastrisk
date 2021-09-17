@@ -1,0 +1,298 @@
+---
+title: "Nutrients run-off from aquaculture sources"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: haddock
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r additional libraries, inlcude = FALSE}
+library(data.table)
+library(vroom)
+library(rebus)
+library(sf)
+```
+
+
+# Load the shapefiles
+
+First, I load the shapefile of production areas and a shape file of vassdragsomrader
+
+```{r}
+water_shp <- st_read("~/github/nor-prep/prep/clean_waters/data/shapefiles/Kystvann20200415.gdb")
+prod_areas <- readOGR(dsn = "/Volumes/ftp.imr.no/ProductionAreas/OGRgeoJSON_prodomr")
+```
+
+
+# Define intersections between production areas and water areas
+
+We need to extract information on vassdragomrade for each observation (they are per smaller unit - so called regine), so that each observation aslo have a production area assigned to it.
+
+
+
+Remove columns that we don't need in water shapes:
+
+```{r}
+water_shp_prep <- water_shp |> 
+  select(-c(NaturligSterktModifisert,
+            ØkologiskTilstandPotensial,
+            ØkologiskPresisjon,
+            ØkologiskMiljømål2021,
+            KjemiskTilstand,
+            KjemiskPresisjon,
+            KjemiskMiljømål2021,
+            Risikovurdering,
+           Vannregionkoordinator,
+           DatoOppdatert))
+```
+
+```{r}
+prodareas_sf <- sf::st_as_sf(prod_areas, coords= c("long", "lat"),crs = 4326, agr="identity")
+
+st_crs(prodareas_sf)
+```
+
+```{r}
+st_crs(water_shp_prep)
+```
+
+
+
+Also, we need to transform water shapes to WGS84 UTM zone 33, like production areas
+```{r}
+water_shp_trans <- st_transform(water_shp_prep, crs = 4326)
+```
+
+
+Check that all geometries are valid. Some of the geometreis in water shape file are invalid. We can fix them.
+
+```{r}
+sum(st_is_valid(water_shp_trans))
+sum(st_is_valid(prodareas_sf))
+```
+```{r}
+water_shp_val <- st_make_valid(water_shp_trans)
+prodareas_val <-st_make_valid(prodareas_sf)
+```
+
+Calculate intersections between water entities (vannforekomst) and production areas 
+```{r}
+sf::sf_use_s2(FALSE)
+water_in_prodarea <- st_intersection(prodareas_val, water_shp_val)
+```
+There will be several vassdragomrader within each production area, so we can later just take a sum of all runoffs per production area, or rank them in one or another way.
+
+Just to make the data less heavy, let's remove geometry and other unnecessary columns
+```{r}
+water_in_prodarea2 <- water_in_prodarea |> 
+  select(-c(EUVannforekomstID,
+            VannforekomstID,
+            Vannforekomstnavn,
+            ArealKvadratmeter
+            )
+         ) |> 
+  st_drop_geometry() |> 
+  select(-c(
+    Shape_Length,
+    Shape_Area
+  )) |> 
+  rename(prod_area_id = id,
+         prod_area_name = name) |> 
+  clean_names()
+```
+
+I also clean the production areas names, like in the other tables
+
+```{r}
+water_in_prodarea3 <- water_in_prodarea2 |> 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = "->", replacement = "-"
+    )
+  ) %>% 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = fixed("+"), replacement = "-"
+    )
+  )
+
+```
+
+
+There are several water entities per production area, so vassdragomrade number is also repeated as many times as there are water entities. We need only one combination of production area and vassdragomrade.
+
+```{r}
+water_in_prodarea4 <- water_in_prodarea3 |> 
+  group_by(prod_area_id,
+           prod_area_name,
+           vassdragsomrade,
+           vannregion) |> 
+  slice_head()
+```
+
+
+# Prepare data on nutrients runoff
+
+There ae data for years 1994-2019 but i will only use data for 2000-2019
+
+```{r}
+#year <- readOGR(dsn = "/Volumes/ftp.imr.no/ProductionAreas/OGRgeoJSON_prodomr")
+
+runoff_00_19 <- list.files(
+  path = file.path("/Volumes/ftp.imr.no/aquaculture/teotil_runoff_data/norway_annual_output_data"), 
+  pattern = ".20[[:digit:]]{2}.csv",
+  full.names = T) 
+  
+
+runoff_prep <- map(runoff_00_19, 
+                  ~ vroom::vroom(.x,
+  .name_repair = ~ janitor::make_clean_names(.)
+  ))
+
+names <- seq(2000, 2019, by = 1)
+names(runoff_prep) <- names
+
+#runoff_prep2 <- map2(names, runoff_prep, ~.y[["Area"]] <- .x) did not work
+#
+#Another possible solution
+# #list(mtcars, iris, mtcars, iris) %>%
+#     map2(c("Place1", "Place2", "Place3", "Place4"), ~ 
+#                .x %>%
+#                    mutate(Area = .y))
+
+runoff_prep2 <-map2(runoff_prep, .y = as.list(names), function(x, y) { x[["year"]] <- y; x })
+
+
+runoff_prep3 <- map(runoff_prep2, ~ 
+    select(.x, c(
+      year,
+      regine,
+      regine_ned,
+      local_aqu_tot_p_tonnes,
+      local_ind_tot_n_tonnes,
+      accum_aqu_tot_n_tonnes,
+      accum_aqu_tot_p_tonnes
+    )
+)) %>%
+  do.call("rbind", .)
+```
+
+I need also to add a column called "vassdragomrade" which will be an ID column for merging the tables/
+I remove all the rows where data is aggregated per marine area, i keep just the row where data is per vassdragsomrade and delomrader inside it.
+
+```{r}
+runoff_prep4 <-runoff_prep3 |> 
+  mutate(aggregated = str_detect(regine, pattern = "_")) |> 
+  filter(aggregated == "FALSE") |> 
+  select(-aggregated) |> 
+  separate(regine, into = c("vassdragsomrade", "delomrade"),
+           sep = "[.]")
+```
+
+
+We have two possibilities: either keep data per delomrade and take a sum over vassdragsomrader, but there are also rows where amount of ruoff already accumulated over vassdragsomrade but we cannot see the local sources alone there.
+I will filter for the rows where we can have values per delomrade from the local sources.
+We will use the columns with data on local contributions of N and P.
+
+
+```{r}
+runoff_prep5 <-runoff_prep4 |> 
+  filter(!delomrade == "") |> 
+  select(-regine_ned)
+```
+
+
+Now I need to merge the two tables - to add information on vassdragomrade and production area to the runoff data.
+
+```{r}
+runoff_prep6 <- runoff_prep5 |> 
+  left_join(water_in_prodarea4,
+             by = "vassdragsomrade")
+```
+
+
+22 vassdragsomrader are not in the final table:
+```{r}
+nonmatch <- filter(runoff_final, is.na(prod_area_name)) |> group_by(vassdragsomrade) |> tally()
+
+nonmatch
+```
+Checl waht these vassdragomrade areas are:
+
+```{r}
+water_all <- st_read("~/github/coastrisk/prep/administrative/NVEData/Nedborfelt")
+```
+```{r}
+water_nonmatched <-water_all[water_all$vassOmrNr %in% nonmatch$vassdragsomrade,]
+
+water_nm_trans <- st_transform(water_nonmatched, crs = 4326)
+
+```
+
+
+```{r}
+water_in_prodarea_nonmatched <- st_intersection(prodareas_val, water_nm_trans)
+```
+I can only get info for 10 out of 22 non-matching observations
+
+```{r}
+water_inprodarea_nm2 <- as.tibble(st_drop_geometry(water_in_prodarea_nonmatched)) |> 
+  mutate(
+    prod_area_name = str_replace_all(
+      name, pattern = "->", replacement = "-"
+    )
+  ) %>% 
+  mutate(
+    prod_area_name_new = str_replace_all(
+      prod_area_name, pattern = fixed("+"), replacement = "-"
+    )
+  ) |> 
+  rename(prod_area_id_new = id,
+         vassdragsomrade_new = vassOmrNr) |> 
+ select(prod_area_id_new, prod_area_name_new, vassdragsomrade_new)
+```
+
+
+```{r}
+runoff_final <- runoff_prep6 |> 
+  left_join(water_inprodarea_nm2, by = c("vassdragsomrade" = "vassdragsomrade_new"))|> 
+  mutate(prod_area_id = ifelse(is.na(prod_area_id), 
+                      prod_area_id_new,
+                      prod_area_id)) |> 
+   mutate(prod_area_name = ifelse(is.na(prod_area_name), 
+                      prod_area_name_new,
+                      prod_area_name)) |> 
+  select(-c(prod_area_id_new,
+            prod_area_id_new))
+  
+```
+
+Check non-matches again. There are still 12 vassdragsomrader for which i cannot find a matching produciton area.
+
+```{r}
+nonmatch2 <- filter(runoff_final, is.na(prod_area_name)) |> group_by(vassdragsomrade) |> tally()
+
+nonmatch2
+
+```
+# Save the final table
+
+```{r}
+write.csv(runoff_final, "./data/output/n_p_runoff_per_vadssdragomr.csv")
+```
+
