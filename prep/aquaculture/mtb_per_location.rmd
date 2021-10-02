@@ -95,7 +95,7 @@ str_view(tillatelser2010_18$ART, pattern = "Laks", match = T)#Laks
 ```
 
 Filter the rows for salmon and trout.
-NB! The table inlcudes main production farms  but also stamfisk and settesfisk
+NB! The table includes main production farms  but also stamfisk and settesfisk
 
 ```{r}
 mtb_prep <- tillatelser2010_18 |> 
@@ -277,10 +277,41 @@ mtb_final <- mtb_prep6 |>
 ```
 
 
+
+
+
+
+
 # Save the final table
 ```{r}
 write.csv(mtb_final, "./data/output/locations_capacity_2010_2018.csv")
 ```
 
 
+# Table on MATFISK with volume-measured capacity
+
+The table above can be used to see how many production sites where there each year, but capacity cannot be compared between the areas - sometimes the measurement is tonn, sometines count and m3. I can only keep m3, kg and tonn-units observations, if we want to present the capacity as a comparable numeric variable.
+
+Transform kg to tonn and m3 to tonn. I will only keep MATFISK because, usually, SETTEFISK and STAMFISK location capacities are measured as counts. Also keep only the observations where capacity is measure as tonn, kg or m3.
+
+Conversion from m3 to tonns: ant m3 x 0,065 = ant ton
+
+Note that some capacities ara zero, for instance, location 	13189 in 2014.
+```{r}
+mtb_prep7 <- mtb_final |> 
+  filter(production_form == "MATFISK") |> 
+  filter(units_of_capacity %in% c("KG", "TN", "M3")) |> 
+  mutate(location_capacity = ifelse(units_of_capacity == "KG",
+         location_capacity/1000,
+         location_capacity)) |> 
+  mutate(location_capacity = ifelse(units_of_capacity == "M3",
+         location_capacity*0.065,
+         location_capacity))
+```
+
+# Save the updated table
+
+```{r}
+write.csv(mtb_prep7, "./data/output/locations_capacity_marfisk_only_2010_2018.csv")
+```
 

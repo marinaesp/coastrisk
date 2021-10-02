@@ -1,0 +1,258 @@
+---
+title: "Nutrients run-off from aquaculture sources"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: haddock
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r additional libraries, inlcude = FALSE}
+library(data.table)
+library(vroom)
+library(rebus)
+library(sf)
+```
+
+
+# Load the shapefiles
+
+First, I load the shapefile of production areas and a shape file of vassdragsomrader, but in the version 2 i use a shape files of water areas for the whole Norway, that i downloaded from NVE on 17th of September. There will be less na for production areas than if i use an older shape file.
+
+Also, in this version, i calculate the area of the intersection between production areas and water areas. 
+It is possible that a water area is spread over two production areas (if it is on the border). Then, prod area1 let's say, has water area 1 and 2. There is 60% of water area 1  and 30% of water area 2. Then weighted total is
+
+2(0.6runoff1 + 0.3runoff2)
+
+Weighted total runoff will be (if there are only 2 vassdrags areas in a produciton area):
+
+$\bar{y} = 2*(w_1*y_1 + w_2*y_2)$
+
+
+
+```{r}
+water_shp <- st_read("~/github/coastrisk/prep/administrative/NVEData/Nedborfelt")
+prod_areas <- readOGR(dsn = "/Volumes/ftp.imr.no/ProductionAreas/OGRgeoJSON_prodomr")
+```
+
+
+# Define intersections between production areas and water areas
+
+We need to extract information on vassdragomrade for each observation (they are per smaller unit - so called regine), so that each observation aslo have a production area assigned to it.
+
+
+
+Remove columns that we don't need in water shapes:
+
+```{r}
+water_shp_prep <- water_shp |> 
+  select(-objType)
+```
+
+```{r}
+prodareas_sf <- sf::st_as_sf(prod_areas, coords= c("long", "lat"),crs = 4326, agr="identity")
+
+st_crs(prodareas_sf)
+```
+
+```{r}
+st_crs(water_shp_prep)
+```
+
+
+
+Also, we need to transform water shapes to WGS84 UTM , like production areas
+```{r}
+water_shp_trans <- st_transform(water_shp_prep, crs = 4326)
+```
+
+
+Check that all geometries are valid. Some of the geometreis in water shape file are invalid. We can fix them.
+
+```{r}
+sum(st_is_valid(water_shp_trans))
+sum(st_is_valid(prodareas_sf))
+```
+
+```{r}
+water_shp_val <- st_make_valid(water_shp_trans)
+prodareas_val <-st_make_valid(prodareas_sf)
+```
+
+Calculate intersections between water entities (vanndragsomrade) and production areas 
+```{r}
+sf::sf_use_s2(FALSE)
+water_in_prodarea <- st_intersection(prodareas_val, water_shp_val)
+```
+```{r}
+water_in_prodarea$inter_area <-st_area(water_in_prodarea)
+```
+
+
+There will be several vassdragomrader within each production area, so we can later just take a sum of all runoffs per production area, or rank them in one or another way.
+
+Just to make the data less heavy, let's remove geometry and other unnecessary columns
+```{r}
+water_in_prodarea2 <- water_in_prodarea |> 
+  select(-c(arealLand,
+            areal_km2
+            )
+         ) |> 
+  st_drop_geometry() |> 
+  rename(prod_area_id = id,
+         prod_area_name = name,
+         vassdragsomrade_number = vassOmrNr,
+         vassdragsomrade_name = vassOmr) |> 
+  clean_names()
+```
+
+I also clean the production areas names, like in the other tables
+
+```{r}
+water_in_prodarea3 <- water_in_prodarea2 |> 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = "->", replacement = "-"
+    )
+  ) %>% 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = fixed("+"), replacement = "-"
+    )
+  )
+
+```
+
+
+
+Most of the vassdragsomrader are small, so they fit in just one production area. However, some are big, like Vikedalselva/vindafjorden, which fits in Karmoy-Sotra area and in Ryfylke
+
+Let's calculate the proportion of each vassdragsomrade in relation to all vassdragsomrader that are enclosed in a single production area. We will need these proporsions later to calcualte weighted total of nutrients runoff.
+
+```{r}
+water_in_prodarea4 <- water_in_prodarea3 |> 
+  mutate(inter_area = unclass(inter_area)) |> 
+  group_by(prod_area_id, prod_area_name) |> 
+  
+  mutate(tot_area = sum(inter_area)) |> 
+  mutate(vass_area_prop = inter_area/tot_area)
+
+```
+
+
+# Prepare data on nutrients runoff
+
+There ae data for years 1994-2019 but i will only use data for 2000-2019
+
+```{r}
+#year <- readOGR(dsn = "/Volumes/ftp.imr.no/ProductionAreas/OGRgeoJSON_prodomr")
+
+runoff_00_19 <- list.files(
+  path = file.path("/Volumes/ftp.imr.no/aquaculture/teotil_runoff_data/norway_annual_output_data"), 
+  pattern = ".20[[:digit:]]{2}.csv",
+  full.names = T) 
+  
+
+runoff_prep <- map(runoff_00_19, 
+                  ~ vroom::vroom(.x,
+  .name_repair = ~ janitor::make_clean_names(.)
+  ))
+
+names <- seq(2000, 2019, by = 1)
+names(runoff_prep) <- names
+
+
+runoff_prep2 <-map2(runoff_prep, .y = as.list(names), function(x, y) { x[["year"]] <- y; x })
+
+
+runoff_prep3 <- map(runoff_prep2, ~ 
+    select(.x, c(
+      year,
+      regine,
+      regine_ned,
+      local_aqu_tot_p_tonnes,
+      local_aqu_tot_n_tonnes,
+      accum_aqu_tot_n_tonnes,
+      accum_aqu_tot_p_tonnes
+    )
+)) %>%
+  do.call("rbind", .)
+```
+
+I need also to add a column called "vassdragomrade" which will be an ID column for merging the tables/
+I remove all the rows where data is aggregated per marine area, i keep just the row where data is per vassdragsomrade and delomrader inside it.
+
+```{r}
+runoff_prep4 <-runoff_prep3 |> 
+  mutate(aggregated = str_detect(regine, pattern = "_")) |> 
+  filter(aggregated == "FALSE") |> 
+  select(-aggregated) |> 
+  separate(regine, into = c("vassdragsomrade", "delomrade"),
+           sep = "[.]")
+```
+
+
+We have two possibilities: either keep data per delomrade and take a sum over vassdragsomrader, but there are also rows where amount of ruoff already accumulated over vassdragsomrade but we cannot see the local sources alone there.
+I will filter for the rows where we can have values per delomrade from the local sources.
+We will use the columns with data on local contributions of N and P.
+
+
+```{r}
+runoff_prep5 <-runoff_prep4 |> 
+  filter(!delomrade == "") |> 
+  select(-regine_ned)
+```
+
+
+Now I need to merge the two tables - to add information on vassdragomrade and production area to the runoff data.
+
+```{r}
+runoff_prep6 <- runoff_prep5 |> 
+  left_join(water_in_prodarea4,
+             by = c("vassdragsomrade" = "vassdragsomrade_number"))
+```
+
+
+12 vassdragsomrader are not in the final table:
+```{r}
+nonmatch <- filter(runoff_prep6, is.na(prod_area_name)) |> group_by(vassdragsomrade) |> tally()
+
+nonmatch
+```
+Examples of vassdrags that had no match in runoff taboe  (means  they do not intersect with aquaculture production areas):
+Dalelven,
+Kemijoki,
+Torneelven,
+Umeelven
+
+Semms like it's all the rivers that cross the border between Norway and Sweden or Norway and Finland.
+
+
+
+
+# Save the final table
+
+```{r}
+write.csv(runoff_prep6, "./data/output/n_p_runoff_per_vadssdragomr_version2.csv")
+```
+
+
+
+```{r}
+
+```
+
