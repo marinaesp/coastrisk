@@ -52,7 +52,12 @@ prod_areas <- readOGR(dsn = "/Volumes/ftp.imr.no/ProductionAreas/OGRgeoJSON_prod
 
 # Define intersections between production areas and water areas
 
-We need to extract information on vassdragomrade for each observation (they are per smaller unit - so called regine), so that each observation aslo have a production area assigned to it.
+We need to extract information on vassdragomrade for each observation (they are per smaller unit - so called regine), so that each observation also have a production area assigned to it.
+
+Information on what is regine:
+https://www.nve.no/kart/kartdata/vassdragsdata/nedborfelt-regine/
+
+
 
 
 

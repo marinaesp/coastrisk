@@ -1,0 +1,128 @@
+---
+title: "Occasions of lice treatments at aquaculture farms"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: haddock
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r additional libraries, inlcude = FALSE, message=FALSE}
+library(data.table)
+library(vroom)
+library(rebus)
+library(here)
+```
+
+# Load the data on lice treatment
+
+The data was downloaded from the BarentsRisk website on 03.11.2021 from
+https://www.barentswatch.no/nedlasting/fishhealth/treatments?lang=no
+
+
+
+```{r}
+lustreat <- read.csv(here("prep", "aquaculture", "data", "raw", "tiltak_mot_lakselus.csv"))
+```
+
+# Cleaning the lice treatment data
+
+Note that i keep only the rows with chemical treatment (medikamentell tiltak). Chemical treatment has two types - bath and feed.
+I remove 13 observations that do not have information on the municipality
+
+```{r}
+lustreat_prep <- lustreat |> 
+  filter(Tiltak == "medikamentell") |> 
+  select(-c(ArtsId, Rensefisk, Antall, Tiltak, Fylkesnummer, Fylke)) |> 
+  janitor::clean_names() |> 
+  rename(year = ar,
+         week = uke,
+         location_number = lokalitetsnummer,
+         location_name = lokalitetsnavn,
+         treatment_type = type_behandling,
+         chemical = virkestoff,
+         treatment_area = omfang,
+         municip_number = kommunenummer,
+         municip = kommune,
+         prod_area_id = produksjonsomrade_id,
+         prod_area_name = produksjonsomrade) |> 
+  filter(!is.na(municip_number))
+```
+
+
+I need to visualize how many bath treatments were there per year and production area, and how many feed treatments.
+
+# Clean the production areas names
+
+I need to make them similar to how they are written in the other datasets.
+For that I will import momb table (can be any other completed dataset) and take the production area identifiers from there.
+
+```{r}
+prod_areas <- read.csv("./data/output/momb_per_prodarea.csv")
+#unique(prod_areas$prod_area_name)
+
+prod_areas_df <- prod_areas |> 
+  select(c(prod_area_id, prod_area_name)) |> 
+  group_by(prod_area_id, prod_area_name) |> 
+  slice_head()
+
+```
+Merge lice treatment table with prod_areas_df table:
+
+
+```{r}
+lustreat_prep2 <- lustreat_prep |> 
+  select(-prod_area_name) |> 
+  left_join(prod_areas_df, by = "prod_area_id")
+```
+
+Prepare the final data set with data on the number of bath treatments and feed treatments per production area and year (i take a sum of all events over a year)
+Number of treatments (either bath or feed) per production area and year varies from 1 to 417
+
+```{r}
+treat_summary <- mosaic::fav_stats(lustreat_prep3$sum_treaments)
+treat_summary
+```
+
+```{r}
+lustreat_prep3 <- lustreat_prep2 |> 
+  mutate(treatment_type = replace(treatment_type,
+                                  treatment_type == "fôrbehandling",
+                                  "Feed")) |> 
+  mutate(treatment_type = replace(treatment_type,
+                                  treatment_type == "badebehandling",
+                                  "Bath")) |> 
+  group_by(year,treatment_type, prod_area_id, prod_area_name) |> 
+  summarize(sum_treaments = n())
+  
+```
+
+How many years with data are there per production area? There somtimes 10 years with data per production area but also 3 to 9 years, meaning that lice treatment does not occur every year (or is not reported every year)
+
+```{r}
+obs_per_area <- lustreat_prep3 |> 
+  group_by(prod_area_name, treatment_type) |> tally()
+
+datatable(obs_per_area)
+```
+
+
+# Save the final table
+```{r}
+write_csv(lustreat_prep3, "./data/output/lice_treatments_per_prodarea.csv")
+```
+

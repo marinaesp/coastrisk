@@ -1,0 +1,234 @@
+year,treatment_type,prod_area_id,prod_area_name,sum_treaments
+2012,Bath,2,Ryfylke,51
+2012,Bath,3,Karmøy - Sotra,415
+2012,Bath,4,Sotra - Stadt,258
+2012,Bath,5,Stad - Hustadvika,61
+2012,Bath,6,Nordmøre - Sør-Trøndelag,247
+2012,Bath,7,Nord-Trøndelag - Bindal,161
+2012,Bath,8,Helgeland - Bodø,176
+2012,Bath,9,Vestfjorden - Vesterålen,135
+2012,Bath,10,Andfjorden - Senja,45
+2012,Bath,11,Kvaløya - Loppa,7
+2012,Bath,12,Vest-Finnmark,29
+2012,Feed,2,Ryfylke,20
+2012,Feed,3,Karmøy - Sotra,122
+2012,Feed,4,Sotra - Stadt,103
+2012,Feed,5,Stad - Hustadvika,8
+2012,Feed,6,Nordmøre - Sør-Trøndelag,28
+2012,Feed,7,Nord-Trøndelag - Bindal,4
+2012,Feed,8,Helgeland - Bodø,13
+2012,Feed,9,Vestfjorden - Vesterålen,50
+2012,Feed,10,Andfjorden - Senja,17
+2012,Feed,11,Kvaløya - Loppa,10
+2012,Feed,12,Vest-Finnmark,15
+2013,Bath,2,Ryfylke,56
+2013,Bath,3,Karmøy - Sotra,266
+2013,Bath,4,Sotra - Stadt,207
+2013,Bath,5,Stad - Hustadvika,77
+2013,Bath,6,Nordmøre - Sør-Trøndelag,220
+2013,Bath,7,Nord-Trøndelag - Bindal,188
+2013,Bath,8,Helgeland - Bodø,168
+2013,Bath,9,Vestfjorden - Vesterålen,150
+2013,Bath,10,Andfjorden - Senja,57
+2013,Bath,11,Kvaløya - Loppa,15
+2013,Bath,12,Vest-Finnmark,39
+2013,Bath,13,Øst-Finnmark,4
+2013,Feed,2,Ryfylke,31
+2013,Feed,3,Karmøy - Sotra,103
+2013,Feed,4,Sotra - Stadt,113
+2013,Feed,5,Stad - Hustadvika,2
+2013,Feed,6,Nordmøre - Sør-Trøndelag,21
+2013,Feed,7,Nord-Trøndelag - Bindal,59
+2013,Feed,8,Helgeland - Bodø,15
+2013,Feed,9,Vestfjorden - Vesterålen,27
+2013,Feed,10,Andfjorden - Senja,16
+2013,Feed,11,Kvaløya - Loppa,19
+2014,Bath,2,Ryfylke,62
+2014,Bath,3,Karmøy - Sotra,313
+2014,Bath,4,Sotra - Stadt,417
+2014,Bath,5,Stad - Hustadvika,148
+2014,Bath,6,Nordmøre - Sør-Trøndelag,286
+2014,Bath,7,Nord-Trøndelag - Bindal,160
+2014,Bath,8,Helgeland - Bodø,175
+2014,Bath,9,Vestfjorden - Vesterålen,165
+2014,Bath,10,Andfjorden - Senja,105
+2014,Bath,11,Kvaløya - Loppa,12
+2014,Bath,12,Vest-Finnmark,62
+2014,Feed,2,Ryfylke,29
+2014,Feed,3,Karmøy - Sotra,124
+2014,Feed,4,Sotra - Stadt,181
+2014,Feed,5,Stad - Hustadvika,10
+2014,Feed,6,Nordmøre - Sør-Trøndelag,64
+2014,Feed,7,Nord-Trøndelag - Bindal,91
+2014,Feed,8,Helgeland - Bodø,80
+2014,Feed,9,Vestfjorden - Vesterålen,53
+2014,Feed,10,Andfjorden - Senja,23
+2014,Feed,11,Kvaløya - Loppa,14
+2014,Feed,12,Vest-Finnmark,31
+2015,Bath,2,Ryfylke,141
+2015,Bath,3,Karmøy - Sotra,254
+2015,Bath,4,Sotra - Stadt,243
+2015,Bath,5,Stad - Hustadvika,171
+2015,Bath,6,Nordmøre - Sør-Trøndelag,356
+2015,Bath,7,Nord-Trøndelag - Bindal,179
+2015,Bath,8,Helgeland - Bodø,186
+2015,Bath,9,Vestfjorden - Vesterålen,141
+2015,Bath,10,Andfjorden - Senja,68
+2015,Bath,11,Kvaløya - Loppa,12
+2015,Bath,12,Vest-Finnmark,93
+2015,Feed,2,Ryfylke,34
+2015,Feed,3,Karmøy - Sotra,190
+2015,Feed,4,Sotra - Stadt,210
+2015,Feed,5,Stad - Hustadvika,38
+2015,Feed,6,Nordmøre - Sør-Trøndelag,134
+2015,Feed,7,Nord-Trøndelag - Bindal,102
+2015,Feed,8,Helgeland - Bodø,89
+2015,Feed,9,Vestfjorden - Vesterålen,70
+2015,Feed,10,Andfjorden - Senja,24
+2015,Feed,11,Kvaløya - Loppa,15
+2015,Feed,12,Vest-Finnmark,13
+2016,Bath,1,Svenskegrensen - Jæren,5
+2016,Bath,2,Ryfylke,158
+2016,Bath,3,Karmøy - Sotra,408
+2016,Bath,4,Sotra - Stadt,258
+2016,Bath,5,Stad - Hustadvika,70
+2016,Bath,6,Nordmøre - Sør-Trøndelag,129
+2016,Bath,7,Nord-Trøndelag - Bindal,73
+2016,Bath,8,Helgeland - Bodø,155
+2016,Bath,9,Vestfjorden - Vesterålen,78
+2016,Bath,10,Andfjorden - Senja,100
+2016,Bath,11,Kvaløya - Loppa,29
+2016,Bath,12,Vest-Finnmark,48
+2016,Bath,13,Øst-Finnmark,1
+2016,Feed,1,Svenskegrensen - Jæren,4
+2016,Feed,2,Ryfylke,59
+2016,Feed,3,Karmøy - Sotra,169
+2016,Feed,4,Sotra - Stadt,244
+2016,Feed,5,Stad - Hustadvika,45
+2016,Feed,6,Nordmøre - Sør-Trøndelag,151
+2016,Feed,7,Nord-Trøndelag - Bindal,43
+2016,Feed,8,Helgeland - Bodø,106
+2016,Feed,9,Vestfjorden - Vesterålen,71
+2016,Feed,10,Andfjorden - Senja,49
+2016,Feed,11,Kvaløya - Loppa,11
+2016,Feed,12,Vest-Finnmark,36
+2016,Feed,13,Øst-Finnmark,2
+2017,Bath,2,Ryfylke,31
+2017,Bath,3,Karmøy - Sotra,81
+2017,Bath,4,Sotra - Stadt,55
+2017,Bath,5,Stad - Hustadvika,3
+2017,Bath,6,Nordmøre - Sør-Trøndelag,55
+2017,Bath,7,Nord-Trøndelag - Bindal,6
+2017,Bath,8,Helgeland - Bodø,25
+2017,Bath,9,Vestfjorden - Vesterålen,63
+2017,Bath,10,Andfjorden - Senja,75
+2017,Bath,11,Kvaløya - Loppa,20
+2017,Bath,12,Vest-Finnmark,35
+2017,Feed,2,Ryfylke,42
+2017,Feed,3,Karmøy - Sotra,82
+2017,Feed,4,Sotra - Stadt,183
+2017,Feed,5,Stad - Hustadvika,22
+2017,Feed,6,Nordmøre - Sør-Trøndelag,78
+2017,Feed,7,Nord-Trøndelag - Bindal,25
+2017,Feed,8,Helgeland - Bodø,70
+2017,Feed,9,Vestfjorden - Vesterålen,92
+2017,Feed,10,Andfjorden - Senja,29
+2017,Feed,11,Kvaløya - Loppa,28
+2017,Feed,12,Vest-Finnmark,33
+2018,Bath,1,Svenskegrensen - Jæren,6
+2018,Bath,2,Ryfylke,3
+2018,Bath,3,Karmøy - Sotra,28
+2018,Bath,4,Sotra - Stadt,38
+2018,Bath,6,Nordmøre - Sør-Trøndelag,4
+2018,Bath,7,Nord-Trøndelag - Bindal,1
+2018,Bath,8,Helgeland - Bodø,7
+2018,Bath,9,Vestfjorden - Vesterålen,13
+2018,Bath,10,Andfjorden - Senja,36
+2018,Bath,11,Kvaløya - Loppa,15
+2018,Bath,12,Vest-Finnmark,44
+2018,Bath,13,Øst-Finnmark,3
+2018,Feed,1,Svenskegrensen - Jæren,2
+2018,Feed,2,Ryfylke,14
+2018,Feed,3,Karmøy - Sotra,74
+2018,Feed,4,Sotra - Stadt,79
+2018,Feed,5,Stad - Hustadvika,16
+2018,Feed,6,Nordmøre - Sør-Trøndelag,22
+2018,Feed,7,Nord-Trøndelag - Bindal,33
+2018,Feed,8,Helgeland - Bodø,68
+2018,Feed,9,Vestfjorden - Vesterålen,106
+2018,Feed,10,Andfjorden - Senja,55
+2018,Feed,11,Kvaløya - Loppa,29
+2018,Feed,12,Vest-Finnmark,43
+2019,Bath,2,Ryfylke,33
+2019,Bath,3,Karmøy - Sotra,27
+2019,Bath,4,Sotra - Stadt,46
+2019,Bath,5,Stad - Hustadvika,10
+2019,Bath,6,Nordmøre - Sør-Trøndelag,11
+2019,Bath,7,Nord-Trøndelag - Bindal,18
+2019,Bath,8,Helgeland - Bodø,9
+2019,Bath,9,Vestfjorden - Vesterålen,12
+2019,Bath,10,Andfjorden - Senja,47
+2019,Bath,11,Kvaløya - Loppa,6
+2019,Bath,12,Vest-Finnmark,22
+2019,Feed,1,Svenskegrensen - Jæren,11
+2019,Feed,2,Ryfylke,42
+2019,Feed,3,Karmøy - Sotra,62
+2019,Feed,4,Sotra - Stadt,124
+2019,Feed,5,Stad - Hustadvika,30
+2019,Feed,6,Nordmøre - Sør-Trøndelag,62
+2019,Feed,7,Nord-Trøndelag - Bindal,34
+2019,Feed,8,Helgeland - Bodø,74
+2019,Feed,9,Vestfjorden - Vesterålen,116
+2019,Feed,10,Andfjorden - Senja,64
+2019,Feed,11,Kvaløya - Loppa,23
+2019,Feed,12,Vest-Finnmark,43
+2019,Feed,13,Øst-Finnmark,3
+2020,Bath,1,Svenskegrensen - Jæren,2
+2020,Bath,2,Ryfylke,11
+2020,Bath,3,Karmøy - Sotra,55
+2020,Bath,4,Sotra - Stadt,38
+2020,Bath,5,Stad - Hustadvika,2
+2020,Bath,6,Nordmøre - Sør-Trøndelag,4
+2020,Bath,7,Nord-Trøndelag - Bindal,6
+2020,Bath,8,Helgeland - Bodø,15
+2020,Bath,9,Vestfjorden - Vesterålen,24
+2020,Bath,10,Andfjorden - Senja,38
+2020,Bath,11,Kvaløya - Loppa,11
+2020,Bath,12,Vest-Finnmark,31
+2020,Bath,13,Øst-Finnmark,4
+2020,Feed,1,Svenskegrensen - Jæren,9
+2020,Feed,2,Ryfylke,14
+2020,Feed,3,Karmøy - Sotra,65
+2020,Feed,4,Sotra - Stadt,127
+2020,Feed,5,Stad - Hustadvika,24
+2020,Feed,6,Nordmøre - Sør-Trøndelag,43
+2020,Feed,7,Nord-Trøndelag - Bindal,53
+2020,Feed,8,Helgeland - Bodø,92
+2020,Feed,9,Vestfjorden - Vesterålen,110
+2020,Feed,10,Andfjorden - Senja,79
+2020,Feed,11,Kvaløya - Loppa,38
+2020,Feed,12,Vest-Finnmark,39
+2020,Feed,13,Øst-Finnmark,2
+2021,Bath,2,Ryfylke,20
+2021,Bath,3,Karmøy - Sotra,59
+2021,Bath,4,Sotra - Stadt,34
+2021,Bath,5,Stad - Hustadvika,2
+2021,Bath,6,Nordmøre - Sør-Trøndelag,18
+2021,Bath,7,Nord-Trøndelag - Bindal,5
+2021,Bath,8,Helgeland - Bodø,5
+2021,Bath,9,Vestfjorden - Vesterålen,22
+2021,Bath,10,Andfjorden - Senja,29
+2021,Bath,11,Kvaløya - Loppa,12
+2021,Bath,12,Vest-Finnmark,12
+2021,Feed,2,Ryfylke,21
+2021,Feed,3,Karmøy - Sotra,45
+2021,Feed,4,Sotra - Stadt,100
+2021,Feed,5,Stad - Hustadvika,25
+2021,Feed,6,Nordmøre - Sør-Trøndelag,54
+2021,Feed,7,Nord-Trøndelag - Bindal,35
+2021,Feed,8,Helgeland - Bodø,75
+2021,Feed,9,Vestfjorden - Vesterålen,66
+2021,Feed,10,Andfjorden - Senja,61
+2021,Feed,11,Kvaløya - Loppa,32
+2021,Feed,12,Vest-Finnmark,33
+2021,Feed,13,Øst-Finnmark,2

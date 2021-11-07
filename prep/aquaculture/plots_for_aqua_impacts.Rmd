@@ -1,0 +1,263 @@
+---
+title: "Plots for aquaculture impacts per production region"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: haddock
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r additional libraries, inlcude = FALSE}
+library(data.table)
+library(vroom)
+library(rebus)
+library(sf)
+```
+
+
+In this file, I will plot the aquaculture impacts for all the production areas, one plot per production area but all indices at the same plot
+
+# Load the data
+```{r}
+lice <-read.csv("./data/output/lice_count_2012_2019.csv")
+totprod <-read.csv("./data/output/annual_aqua_production_sum_per_prodregion.csv")
+mort <-read.csv("./data/output/farmed_fish_mortality_per_mcp_and_prodregion.csv")
+feed <-read.csv("./data/output/feed_consumption_per_mcp_and_prodregion.csv")
+escaped <-read.csv("./data/output/escaped_fish_per_mcp_and_prodregion.csv")
+mtb <-read.csv("./data/output/locations_capacity_2010_2018.csv")
+nutri <-read.csv("./data/output/n_p_runoff_per_vassdragsomr_version2.csv")
+```
+
+# Prepare all the indices data
+
+In most cases, i will have to take a sum of an index variable over all production areas. For example, mortality, total yield and feed consumption are per municipality, so i will sum them up to production region.
+
+## Indices based on on total produciton statistics
+
+The main table - total aquaculture yield per year. I will join other tables to this table.
+
+```{r}
+feed_prep <- feed |> 
+  group_by(year, prod_area_name, prod_area_id) |> 
+  summarize(feed_total = sum(feed_consumption_kg))
+```
+
+
+```{r}
+mort_prep <- mort |> 
+  group_by(year, prod_area_name, prod_area_id) |> 
+  summarize(mortality_total = sum(died_fish_count))
+```
+```{r}
+escaped_prep <- escaped |> 
+  group_by(year, prod_area_name, prod_area_id) |> 
+  summarize(escaped_total = sum(escaped_fish_count))
+```
+## Lice counts
+
+I will take a sum of average adult lice count per fish, because it is adult lice that releases larvae that later infest other fish.
+First, i will take only the maximal value of adult lice observed over all week - we can consider that as a strongest possible impact. Then i take average over the production region (taking sum would be wrong, i think).
+
+NB! Not every location reported lice every week each year, sometimes there is data for only a few weeks over a year (might be there was not fish most of the month in that year). So, different location will contribute to average maximal lice over the production region.
+
+```{r}
+lice_prep <- lice |> 
+  group_by(year, location_number, municip_number,prod_area_id, prod_area_name) |> 
+  summarize(max_lice = max(adult_lice, na.rm=T)) |> 
+  group_by(year, prod_area_id, prod_area_name) |> 
+  summarize(mean_lice_prodarea  = mean(max_lice, na.rm=T))
+```
+
+## Nutrients runoff
+
+For nutrients, i remove rows where production area is NA.
+Then i calculate total runoff per production area as sum of runoff per vassdrag multiplied by proportion of that vassdrag to total area 
+of all vassdrags in a production region, and multiplied by the number of vassdrags in a production region
+
+$nutrients_{total} = \sum_{i=1}^{N}(w_i*nutrients_i )$
+
+
+First, i need to take total amount of runoff per vassdragsomrade
+
+```{r}
+nutri_prep <- nutri |> 
+  filter(!is.na(prod_area_name)) |> 
+  group_by(year,vassdragsomrade,vassdragsomrade_name, vass_area_prop,prod_area_id, prod_area_name) |> 
+  summarize(local_aqu_tot_p_tonnes_vass = sum(local_aqu_tot_p_tonnes),
+            local_aqu_tot_n_tonnes_vass = sum(local_aqu_tot_n_tonnes)
+            ) |> 
+  group_by(year, prod_area_id, prod_area_name) |> 
+  summarize(local_aqu_tot_n_tonnes = sum(local_aqu_tot_n_tonnes_vass*vass_area_prop),
+            local_aqu_tot_p_tonnes = sum(local_aqu_tot_p_tonnes_vass*vass_area_prop))
+  
+```
+
+
+## MTB of locations
+
+I will assume that different units, like m3 and tons mean the same - volume of water in the cages.
+I will select only MATFISK, otherwise also count of smolts in SETTEFISJ ANLEGG will be included.
+Then i take a sum of all tons licensed over the whole production area. I need to ask FISKEDIR which converstion coefficients they use to convert m3 to ton of fish, not sure what's density of salmonid should be used.
+```{r}
+mtb_prep <- mtb |> 
+  filter(production_form == "MATFISK") |> 
+```
+
+
+
+
+## MOMB
+
+Base the momb indikator on the % of locations with momb=3 or 4, over the production area
+
+## Diseaes
+
+
+
+???? Should i take the sum of all outbreaks of any (important) diseases over a year per production region? Ask Mette
+
+
+## Salmon lice treatment events
+
+
+## Risks related to escaped salmon in rivers
+
+
+
+## Final table
+
+Transpose the table into a long format, where all indices are under variable "impact"
+#Join tables and standardize the continuous covariates
+
+?? Check why there is no aqua production in Ost-Finnmark in 2012, was produciton negative and i replaced it with NA?
+
+```{r}
+final <- totprod |> 
+  left_join(feed_prep[,c(1,3,4)], by = c("year", "prod_area_id")) |> 
+  left_join(mort_prep[,c(1,3,4)], by = c("year", "prod_area_id"))  |> 
+  left_join(lice_prep[,c(1,2,4)], by = c("year", "prod_area_id")) |> 
+  left_join(escaped_prep[,c(1,3,4)], by = c("year", "prod_area_id")) |> 
+  left_join(nutri_prep[,c(1,2,4,5)], by = c("year", "prod_area_id")) 
+```
+
+
+```{r}
+MyStd <- function(x) { (x - mean(x, na.rm=T)) / sd(x, na.rm=T)}
+
+final_prep <-final |> 
+  mutate_at(vars(c("production_per_region", 
+                   "feed_total", 
+                   "mortality_total",
+                   "mean_lice_prodarea",
+                   "escaped_total",
+                   "local_aqu_tot_n_tonnes",
+                   "local_aqu_tot_p_tonnes")), ~MyStd(.))
+
+```
+
+
+# Plot the indices
+
+Transpose the table to long format
+```{r}
+final_prep2 <- final_prep |> 
+  pivot_longer(cols = c("production_per_region", 
+                   "feed_total", 
+                   "mortality_total",
+                   "mean_lice_prodarea",
+                   "escaped_total",
+                   "local_aqu_tot_n_tonnes",
+                   "local_aqu_tot_p_tonnes"),
+                 names_to = "variable",
+                 values_to = "value")
+```
+
+
+
+## Plot aquaculture yield as line grapth
+
+```{r}
+theme_akva <- function(...) {
+  theme_hc() +
+    theme(
+      axis.text.x = element_text(
+        size = 10, angle = 90, hjust = 1, vjust = 0.5,
+        face = "italic", color = "grey51"
+      ),
+      axis.text.y = element_text(size = 10, angle = 0, face = "italic", color = "grey51"),
+      axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0), face = "italic", size = 12, color = "grey22"),
+      plot.title = element_text(hjust = 0.5, vjust = 0.5),
+      axis.ticks.x = element_line(size = 0.2),
+      axis.ticks.length = unit(0.1, "cm"),
+      #axis.line.x = element_line(size = 0.3, color = "black"),
+      strip.text = element_text(size = 11, face = "italic", color = "grey22"),
+      strip.background = element_rect(fill = "white", color ="white"),
+      panel.background = element_rect(fill = "white"),
+      plot.background = element_rect(fill = "white"),
+      panel.grid.major.y = element_line(color = "grey", size = 0.2),
+      panel.grid.major.x = element_line(color = "grey", size = 0.2),
+      legend.title = element_blank()
+     
+    )
+}
+```
+
+
+```{r}
+breaks1 <- seq(2000, 2020, by = 1)
+labels1 <- as.character(breaks1)
+labels1[!breaks1 %% 2 == 0] <- ""
+
+breaks2 <-seq(-2, 8, by = 2)
+# labels2 <- imap_chr(breaks2, function(., id){
+#   return(paste0(formatC(breaks2[id], format="f", big.mark="," , digits = 0),
+#                              ""))
+# })
+```
+
+
+```{r}
+plot1 <-ggplot(
+  data = final_prep2,
+  mapping = aes(x = year,
+                y = value)
+) +
+  geom_line(mapping = aes(color = variable),  size = 1.1, alpha = 0.7) +
+  geom_point(mapping = aes(color = variable),  size = 0.7, alpha = 0.7) +
+  scale_color_brewer(palette = "Set1",
+                     labels = c("Escaped fish",
+                                "Feed",
+                                "Local N",
+                                "Local P",
+                                "Adult lice",
+                                "Mortality",
+                                "Production")) +
+  facet_wrap(fct_reorder(prod_area_name, 
+                         prod_area_id,
+                         min) ~ .) +
+  scale_x_continuous(limits = c(2000, 2020), breaks = breaks1, labels = labels1) +
+  scale_y_continuous(breaks = breaks2) +
+  labs(y = "Standradized aquaculture impacts", x = "") +
+  geom_hline(yintercept = 0, color = "black", size = 0.3) +
+  theme_akva()
+
+plot1
+
+```
+```{r}
+ggsave("figs/aqua_impacts_per_prodregion.pdf", plot = plot1, width = 12, height =  10, dpi = 300)
+```

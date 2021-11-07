@@ -1,0 +1,344 @@
+---
+title: "MOMB investigations per aquaculture location"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: haddock
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r additional libraries, inlcude = FALSE}
+library(data.table)
+library(vroom)
+library(rebus)
+library(here)
+```
+
+
+#############################
+# Load mom-b examination data and municipalities' names
+
+
+Load the momb data for whole Norway (sent by Fiskeidr in September 2021)
+```{r}
+momb <-read_excel("./data/raw/B-undersøkelser helelandet og historiske.xlsx",
+                  sheet = 3)
+```
+
+
+
+# Load and prepare production areas data
+
+I edit production areas table in the same way as for the other aquaculture indices, so we have similar datasets per index
+```{r}
+mcp_prod <- read.csv(file.path("./data/raw/municipality_productionarea.csv"),sep = " ")
+```
+
+```{r}
+mcp_prod_prep <- mcp_prod %>% 
+  rename(county_number = fylkenummer,
+         municip_number = kommunenummer,
+         municip_name = komname,
+         total_mcp_area = Totalt_areal_inkl_12nm,
+         sea_mcp_area = Havflate_12nm,
+         prod_area_id = id,
+         prod_area_name = name
+         ) %>% 
+  select(-knum) %>% 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = "->", replacement = "-"
+    )
+  ) %>% 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = fixed("+"), replacement = "-"
+    )
+  )
+
+mcp_prod_prep2 <- mcp_prod_prep %>% 
+  mutate(municip_number =
+           ifelse(
+             str_count(municip_number, pattern = regex("[:digit:]")) == 3,
+                       str_c("0",municip_number),
+                       municip_number
+             )
+         )
+```
+
+
+# Further preparation of momb data
+
+
+```{r}
+momb_prep <-  momb %>% 
+  clean_names(.) |> 
+  mutate(Year = lubridate::year(dato_provetaking)) %>% 
+  select(-c("mom_type", "reference")) %>% 
+  rename("kommune" = "lokalitets_kommune") 
+  
+```
+
+
+
+
+I will try to import a data on municipalities' numbers and add the numbers to momb table
+```{r}
+municips <- read_excel("../administrative/fylker_kommuner_2019_2020_changes.xlsx")
+
+municips_prep <-municips |> 
+  select(-starts_with("Fylkes")) |> 
+  clean_names() |> 
+  mutate(kommunenr_2019 = ifelse(
+  str_detect(kommunenr_2019, pattern = "^[[:digit:]]{3}$"), 
+  str_c(kommunenr_2019, "0"),
+  kommunenr_2019)
+  )
+```
+
+
+How many rows do not have municipality information in the original momb data? We will have to just remove these rows.
+
+```{r}
+sum(is.na(momb_prep$kommune))
+```
+
+
+I have to rename some of the municipalities so that they have matches in municipalities' numbers table
+```{r}
+momb_prep3 <- momb_prep |> 
+  filter(!is.na(kommune)) |> 
+  mutate(kommune = replace(kommune, 
+                           kommune == "BØ I NORDLAND",
+                           "BØ")) |> 
+    mutate(kommune = replace(kommune, 
+                           kommune == "GÁIVUOTNA - KÅFJORD - KAIVUONO",
+                           "KÅFJORD")) |> 
+    mutate(kommune = replace(kommune, 
+                           kommune == "BØ I NORDLAND",
+                           "BØ"))|> 
+  mutate(kommune = replace(kommune, 
+                           kommune == "LOABÁK - LAVANGEN",
+                           "LAVANGEN")) |> 
+  mutate(kommune = replace(kommune, 
+                           kommune == "UNJÁRGA - NESSEBY",
+                           "NESSEBY")) |> 
+  left_join(municips_prep[,c(1,2)],
+            by = c("kommune" = "kommunenavn_2019")) |> 
+  mutate(kommunenr_2019 = replace(kommunenr_2019, 
+                           kommune == "HERØY I NORDLAND",
+                           1818))  |> 
+  mutate(kommunenr_2019 = replace(kommunenr_2019, 
+                           kommune == "HERØY I MØRE OG ROMSDAL",
+                           1515)) 
+  
+```
+
+Remove duplicates, because some of the 2019 municipalities were repeated 2-3 times, those that have merged into one municipality in 2020
+
+```{r}
+momb_prep4 <- momb_prep3 |> 
+  group_by(loknr,dato_provetaking,kommune, Year, kommunenr_2019) |> 
+  slice_head()
+
+```
+
+Merge momb table with production areas table, using municipalities' numbers 
+```{r}
+momb_prep5 <- momb_prep4 |> 
+  mutate(municip_name = str_to_sentence(kommune)) |> 
+  rename(year = Year) |> 
+  select(-kommune) |> 
+  mutate(kommunenr_2019 = as.character(kommunenr_2019)) |> 
+  left_join(mcp_prod_prep2[,c(2,4:7)], by = c("kommunenr_2019" = "municip_number"))
+  
+```
+
+Mismatches again are:
+```{r}
+mismatch2 <- filter(momb_prep5, is.na(prod_area_name)) |> group_by(municip_name, kommunenr_2019) |> tally()
+
+
+mismatch2
+
+```
+Only 11 mismatches
+
+The problem with mismatches is that momb data used newest municipality names (after 2020 changes), while production areas table uses per-2020 names. Some municipalities, like ALVER formed after merging several municipalities - Lindas, Radoy, Melas. Which one is meant in the momb table is not possible to find out, so I will just assume it is one of the free (e.g., Lindas). 
+
+Here is the summary how i will replace the names of municipalities:
+
+```{r}
+replace_municips <- tibble(
+  new_names = mismatch2$municip_name,
+  old_names = c("Lindås",
+                "Fusa",
+                "Norddal",
+                 "Halsa",
+  "Eide",
+  "Flora",
+  "Lillesand",
+  "Vikna",
+  "Orkdal",
+  "Berg",
+  "Eid"),
+  
+  old_number = c(1263,
+                 1241,
+                 1524,
+                 1571,
+                 1551,
+                 1401,
+                 0926,
+                 5050,
+                 5024,
+                 1929,
+                 1443)
+)
+
+replace_municips
+```
+
+I go back to table momb_prep4 and change the municipalities numbers for these 11 municipalities, such that we get match with production areas
+```{r}
+momb_prep6 <- momb_prep4 |> 
+  mutate(municip_name = str_to_sentence(kommune))  |> 
+  mutate(kommunenr_2019 = replace(kommunenr_2019,
+                                  municip_name == "Alver",
+                                  1263)) |> 
+  mutate(kommunenr_2019 = replace(kommunenr_2019,
+                                  municip_name == "Bjørnafjorden",
+                                  1241)) |> 
+  mutate(kommunenr_2019 = replace(kommunenr_2019,
+                                  municip_name == "Fjord",
+                                  1524)) |> 
+  mutate(kommunenr_2019 = replace(kommunenr_2019,
+                                  municip_name == "Heim",
+                                  1571)) |> 
+  mutate(kommunenr_2019 = replace(kommunenr_2019,
+                                  municip_name == "Hustadvika",
+                                  1551)) |> 
+  mutate(kommunenr_2019 = replace(kommunenr_2019,
+                                  municip_name == "Kinn",
+                                  1401)) |> 
+  mutate(kommunenr_2019 = replace(kommunenr_2019,
+                                  municip_name == "Lillesand",
+                                  paste0(0, 926))) |> 
+  mutate(kommunenr_2019 = replace(kommunenr_2019,
+                                  municip_name == "Nærøysund",
+                                5050)) |> 
+  mutate(kommunenr_2019 = replace(kommunenr_2019,
+                                  municip_name == "Orkland",
+                                  5024)) |> 
+  mutate(kommunenr_2019 = replace(kommunenr_2019,
+                                  municip_name == "Senja",
+                                  1929)) |> 
+  mutate(kommunenr_2019 = replace(kommunenr_2019,
+                                  municip_name == "Stad",
+                                  1443)) |> 
+  rename(year = Year) |> 
+  select(-kommune) |> 
+  mutate(kommunenr_2019 = as.character(kommunenr_2019)) |> 
+  left_join(mcp_prod_prep2[,c(2,4:7)], by = c("kommunenr_2019" = "municip_number"))
+  
+```
+
+Check if there are still mismatches:
+
+```{r}
+mismatch3 <- filter(momb_prep6, is.na(prod_area_name)) |> group_by(municip_name, kommunenr_2019) |> tally()
+
+mismatch3
+
+```
+Final table 
+```{r}
+momb_prep7 <- momb_prep6 |> 
+  rename(municip = kommune,
+         location_number = loknr,
+         location_name = lok_navn,
+         momb_status = miljo_tilstand,
+         date = dato_provetaking,
+         municip_number_2019 = kommunenr_2019)
+```
+
+
+Save the final table
+```{r}
+write.csv(momb_prep7, "./data/output/momb_per_prodarea.csv", row.names = F)
+```
+
+
+
+###################################################################
+Here is just some other info on the old and new names of the municipalities
+
+```{r}
+old_names <- c("Lindås",
+               "Fusa",
+               "Bø",
+               "c(\Fauske\, \Fuossko\)",
+               "Norddal",
+               "c(\Gáivuotna\, \Kaivuono\, \Kåfjord\)",
+               "c(\Hamarøy\, \Hábmer\)",
+               "c(\Harstad\, \Hárstták\)",
+               "Hemne",
+               "Herøy i møre og romsdal",
+               "Herøy i nordland",
+               "Eide",
+               "Flora",
+               "c(\Lavangen\, \Loabák\)",
+               "Vikna",
+               "c(\Nordreisa\, \Raisi\, \Ráisa\)",
+               "Orkdal",
+               "Lenvik",
+               "Sør-Varanger",
+               "c(\Sortland\, \Suortá\)",
+               "Eid",
+               "c(\Nesseby\, \Unjárga\)")
+```
+
+```{r}
+update_names <- tibble(
+  new_name = mismatch$municip_name,
+  old_name = c("Lindås",
+               "Fusa",
+               "Bø",
+               "c(\Fauske\, \Fuossko\)",
+               "Norddal",
+               "c(\Gáivuotna\, \Kaivuono\, \Kåfjord\)",
+               "c(\Hamarøy\, \Hábmer\)",
+               "c(\Harstad\, \Hárstták\)",
+               "Hemne",
+               "Herøy i møre og romsdal",
+               "Herøy i nordland",
+               "Eide",
+               "Flora",
+               "c(\Lavangen\, \Loabák\)",
+               "Vikna",
+               "c(\Nordreisa\, \Raisi\, \Ráisa\)",
+               "Orkdal",
+               "Lenvik",
+               "Sør-Varanger",
+               "c(\Sortland\, \Suortá\)",
+               "Eid",
+               "c(\Nesseby\, \Unjárga\)"
+)
+)
+```
+
+
