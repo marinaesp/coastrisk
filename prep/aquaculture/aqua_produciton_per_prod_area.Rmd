@@ -908,6 +908,7 @@ Below is the approach I used before, not needed now (keep them just in case).
 
 
 ############################################################################################
+# Old approach (redundant)
 ## Standing biomass table
 ```{r}
 stand_biom <- common_prep4 |> 
@@ -923,9 +924,6 @@ stand_biom <- common_prep4 |>
            prod_area_id,
            prod_area_name),
          everything())
-
-  group_by(year, county, municip_number) %>% 
-  summarize(feed_used_kg = sum(forforbruk_kg, na.rm = T),
 ```
 
 ```{r}
@@ -952,7 +950,7 @@ fish_mort <- common_prep4 |>
 ```
 
 ```{r}
-write.csv(fish_mort, "data/farmed_fish_mortality_per_mcp_and_prodregion.csv", row.names = F)
+write.csv(fish_mort, "data/farmed_fish_mortality_per_mcp_and_prodregion.csv")
 ```
 
 

@@ -67,7 +67,7 @@ tillatelser2010_18 <- bind_rows(year2010, year2011, year2012, year2013, year2014
          
 ```
 
-# Filter out North-Norwegian municipalities
+ Filter out North-Norwegian municipalities
 ```{r}
 tillatelser2010_18_nord <- tillatelser2010_18 %>% filter(TILL_KOMNR >= 1800 & TILL_KOMNR <= 2100)
 ```
@@ -279,9 +279,6 @@ mtb_final <- mtb_prep6 |>
 
 
 
-
-
-
 # Save the final table
 ```{r}
 write.csv(mtb_final, "./data/output/locations_capacity_2010_2018.csv")
@@ -299,19 +296,28 @@ Conversion from m3 to tonns: ant m3 x 0,065 = ant ton
 Note that some capacities ara zero, for instance, location 	13189 in 2014.
 ```{r}
 mtb_prep7 <- mtb_final |> 
-  filter(production_form == "MATFISK") |> 
+  filter(production_form %in% unique(str_subset(
+    production_form, pattern = regex("[.]*MATFISK[ -]*"))
+    )) |> 
   filter(units_of_capacity %in% c("KG", "TN", "M3")) |> 
   mutate(location_capacity = ifelse(units_of_capacity == "KG",
          location_capacity/1000,
          location_capacity)) |> 
   mutate(location_capacity = ifelse(units_of_capacity == "M3",
          location_capacity*0.065,
-         location_capacity))
+         location_capacity)) |> 
+  rename(location_capacity_tonn = location_capacity) |> 
+  select(-units_of_capacity)
+```
+
+How to specify pattern for MATFISK in regex
+```{r}
+ #zero_or_more((ANY_CHAR)) %R% "MATFISK" %R% zero_or_more(char_class(" -"))
 ```
 
 # Save the updated table
 
 ```{r}
-write.csv(mtb_prep7, "./data/output/locations_capacity_marfisk_only_2010_2018.csv")
+write.csv(mtb_prep7, "./data/output/locations_capacity_matfisk_only_2010_2018.csv")
 ```
 

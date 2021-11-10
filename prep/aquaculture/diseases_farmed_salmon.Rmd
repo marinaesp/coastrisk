@@ -1,0 +1,159 @@
+---
+title: "Diseases at aquaculture locations"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: haddock
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r additional libraries, inlcude = FALSE}
+library(data.table)
+library(vroom)
+library(rebus)
+library(here)
+```
+
+# Load the data on diseases
+
+The data was downloaded from the BarentsRisk website on 01.11.2021
+https://www.barentswatch.no/fiskehelse/
+
+
+The data contains information on location that have suspicion on diseases or confirmed to have diseases of the obliged-to-report list.
+These diseases are pancreatic disease (PD) and infectious salmon anemia (ILA).
+
+```{r}
+syk <- read.csv(here("prep", "aquaculture", "data", "raw", "ila_pd.csv"))
+```
+
+
+# Clean the diseases data and prepare an index
+
+There are 3 statuses in the diseases dataset: pavist, mistankte, and avsulttet. I will filter only the rows with status == pavist. Pavist means that the disease is confirmed, i don't think we need observations where disease is only suspected (mistanke) and where the outbreak is finished (avsluttet).
+
+I am not sure what the column "Tomt.dato" is about, but i will not use it.
+
+The dataset is organized such that every week the disease is present, there is a record in this datset. For example, Adnekvamme location had first registered PD on August 9th in 2017 and the disease persisted all the time till February 2018,
+ and in the same location there was a disease also in 2016 - from week 3 to week 30.
+ 
+It would be wrong to say that there were 30 occasions of a disease in Adnekvamme in 2016 - it was the same disease continuing through week 30. How to calculate the disease index? I think we should focus only on the week the disease started, ignoring how long it lasted (we cannot reflect that in a single value per year, or that won't be easy). It is very unlikely that the same disease will start twice a year, since the disease can stay around for 30 weeks.
+
+Not sure why, but production area 1 is not in the table at all, in none of the years.
+
+```{r}
+syk_prep <- syk |> 
+  filter(Status == "Påvist") |> 
+  select(-c(Status,
+            Lokalitetsnavn, 
+            Fra.dato,
+            Til.dato, 
+            Fylkesnummer, 
+            Fylke, 
+            Lat,
+            Lon,
+            UtbruddsId,
+            Subtype,
+            Mistanke.dato,
+            Påvist.dato,
+            Avsluttet.dato,
+            Tømt.dato))
+```
+
+I will take only the first week of disease duration, per location and per disease (PD and ILA)
+```{r}
+syk_prep2 <- syk_prep |> 
+  rename(week = Uke,
+         year = År,
+         location_number = Lokalitetsnummer,
+         disease = Sykdom,
+         municip_number = Kommunenummer,
+         municip = Kommune,
+         prod_area_id = ProduksjonsområdeId,
+         prod_area_name = Produksjonsområde,
+         ) |> 
+  group_by(year, location_number,municip_number, municip, prod_area_id) |> 
+  arrange(week) |> 
+    slice_head()
+```
+
+Now we have just one week per year, location and disease. This one week is just the starting week of the disease in a given year.
+
+Next, I group the data by production areas and year and count the total occasions of disease (irrespective of when they started and how long they lasted)
+
+```{r}
+syk_prep3 <-syk_prep2 |> 
+  group_by(year, disease,prod_area_id) |> 
+  summarize(disease_occasions = n())
+  
+```
+If we want to compare disease outbreaks between the production areas, best would be to standardize the disease occasions by dividing them by the number of locations. I may do it as a separate dataset.
+
+# Clean the production areas names
+
+I will get cleaner names for production areas using the momb table (any table can be used)
+
+```{r}
+prod_areas <- read.csv("./data/output/momb_per_prodarea.csv")
+
+prod_areas_df <- prod_areas |> 
+  select(c(prod_area_id, prod_area_name)) |> 
+  group_by(prod_area_id, prod_area_name) |> 
+  slice_head()
+
+```
+
+# Add production areas names to disease table
+
+```{r}
+syk_prep4 <- syk_prep3 |> 
+  left_join(prod_areas_df, by = "prod_area_id") |> 
+  select(year, prod_area_id, prod_area_name, disease, disease_occasions)
+```
+
+
+## Save the final table
+```{r}
+write.csv(syk_prep4, "./data/output/ila_pf_disease_occasions_per_prodarea.csv", row.names = F)
+```
+
+
+# Standardize the number of disease occasions
+
+I can add information on how many registered locations are there in a production area. Then we can divide the number of disease occasions by the number of locations in business
+
+Load the table on MTB, there i have the information on locations. However, I will select only the locations that produced MATFISK, not SETTEFISK or STAMFISK, because diseases ILA and PD are registered at these locations (these disease affect  growing fish, not the smolts)
+
+
+10.11.2021- not sure that standardization like this is really correct. Why? Because i cannot guarantee, that the locations recoreded in the diseases datasets match exactly the locations that are in the MTB dataset. For instace, MTB dataset includes MATFISK production in the freshwater and breckish waters. Does disease dataset include this locations or not? In other words, it would be easy to make a mistake by dividing diseases occasions by the total number of locations from MTB datset, while some of the locations are not among those that can develop a disease.
+
+I will ask Barentswatch which locations are included in the disease dataset, but for now I will not standardize the disease table.
+
+```{r}
+locs <- read.csv("./data/output/locations_capacity_2010_2018.csv")
+```
+
+Filter for MATFISK and SALTVANN and count the number of locations per production area
+```{r}
+locs_prep <-locs |> 
+  select(-c(X,N_GEOWGS84,W_GEOWGS84)) |> 
+  filter(production_form %in% unique(str_subset(
+    production_form, pattern = regex("[.]*MATFISK[ -]*"))
+    )) |> 
+  group_by(year,)
+```
+
