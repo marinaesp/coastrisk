@@ -43,6 +43,11 @@ prod_areas <- readOGR(dsn = "/Volumes/ftp.imr.no/ProductionAreas/OGRgeoJSON_prod
 prodareas_sf <- st_as_sf(prod_areas, coords= c("long", "lat"), agr="identity")
 ```
 
+
+```{r}
+sf_use_s2(FALSE)
+```
+
 I will first make the names of the regions cleaner, and in the same way they are written in aquaculture maps
 
 ```{r}
@@ -95,12 +100,14 @@ base_map <- ggplot() +
     y = NULL
   ) 
 
+#prodareas_sf_prep2 <- st_make_valid(prodareas_sf_prep2)
 ```
 
 Adding id's of production region superimposed on the map. The 1st region does not plot the label very well, it is plotted on the border with region 2.
 I will manually adjust the coordinates of a centroid for id.
 ```{r}
 prodareas_names <- cbind(prodareas_sf_prep2,st_coordinates(st_centroid(prodareas_sf_prep2)))
+
 
 prodareas_names_prep2 <- prodareas_names %>% 
   st_set_geometry(., NULL) %>% 
@@ -114,6 +121,7 @@ prodareas_names_prep2 <- prodareas_names %>%
 ```
 
 
+
 ```{r}
 main_map <- base_map +
   geom_sf_text(data = prodareas_names_prep2,
@@ -124,6 +132,64 @@ main_map <- base_map +
 ```{r}
 ggsave("./figs/aquaprod_regions.pdf", main_map, width = 6, height = 10, dpi = 300)
 ```
+
+
+## Similar map but for production areas 3-4-9-12
+
+```{r}
+prodareas_sf_prep3 <- prodareas_sf_prep2 |> 
+  filter(id %in% c("3", "4", "9", "12"))
+
+prodareas_names3 <- prodareas_names |> 
+  filter(id %in% c("3", "4", "9", "12"))
+```
+
+
+
+```{r}
+base_map3 <- ggplot() +
+  geom_sf(
+   data = world, 
+   fill = "antiquewhite1", 
+   color = "dimgray", 
+   size = 0.3) +
+  theme(axis.text.x = element_text(size = 10,  color = "grey51"),
+        axis.text.y = element_text(size = 10,  color = "grey51"),
+        legend.text = element_text(size = 15),
+        legend.title = element_text(size = 15,  face = "bold"),
+        panel.background = element_rect(fill = "aliceblue") ,
+        panel.grid.major = element_line(color = "#dbdbd9", linetype = "dashed", size = 0.2),
+        plot.title = element_text(hjust = 0.5, vjust = 0.5, size = 17, face = "bold")
+  ) +
+  scale_x_continuous(breaks = c(0,5,10,15,20, 25,30)) +
+  geom_sf(
+    fill = NA,
+    data = prodareas_sf_prep3,
+    color = "midnightblue",
+    size = 0.7
+  ) +
+  coord_sf(xlim = c(0, 34), ylim = c(55, 75), expand = FALSE) +
+  labs(x = "Longitude", y = "Latitude") +
+  labs(
+    x = NULL,
+    y = NULL
+  ) 
+```
+
+
+
+```{r}
+main_map3 <- base_map3 +
+  geom_sf_text(data = prodareas_names3,
+    aes(X,Y,label = id), fontface = "bold", size = 5)
+```
+
+```{r}
+ggsave("./figs/aquaprod_regions34912.pdf", main_map3, width = 6, height = 10, dpi = 300)
+```
+
+
+
 
 # Plotting aquaculture production regions and fisheries statistics areas together
 loading shapefiles of fisheries statistic areas
@@ -140,7 +206,7 @@ fishareas_sf <- st_as_sf(fish_areas)
 fishareas_sf_prep2 <- st_transform(fishareas_sf, crs = 4326)
 ```
 
-## Map
+## With fisheries polygons
 Base map will be similar to the previous one, but i  will extend the coordinates.
 
 ```{r}
@@ -174,6 +240,9 @@ base_map2 <- ggplot() +
 
 ```
 
+
+
+
 Adding fisheries statistics areas on the top of aquaculture production areas
 ```{r}
 main_map2 <- base_map2 + geom_sf(
@@ -191,6 +260,15 @@ Save this version of the map - without any labels
 ```{r}
 ggsave("./figs/fishareas_n_aquaprod_regions.pdf", main_map2, width = 8, height = 9, dpi = 300)
 ```
+
+
+
+
+
+
+
+
+
 
 
 Adding the names of regions and fisheries polygons (although, they won't be very clear - too many polygons). In the same way as for production areas - calculate centroids and bind them to sf dataframe.

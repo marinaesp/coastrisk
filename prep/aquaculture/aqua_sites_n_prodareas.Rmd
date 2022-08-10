@@ -1,0 +1,247 @@
+---
+title: "Plotting aquaculture production areas and locations"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: haddock
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r}
+library(sf)
+library(mapdata)
+library(maptools)
+library(rgdal)
+library(rgeos)
+library(maps)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(stringr)
+```
+
+Here I will plot location of aquaculture sites (as dots) and the production areas. We will use this map for the assessment of the intersections between the pressures (aquaculture) and ecosystem component within the produciton zones 3,4,9 and 12.
+
+
+# Data 
+
+The shapefiles are loaded from coastrisk ftp, check the path!
+```{r}
+prod_areas <- readOGR(dsn = "/Volumes/ftp.imr.no/ProductionAreas/OGRgeoJSON_prodomr")
+
+prodareas_sf <- st_as_sf(prod_areas, coords= c("long", "lat"), agr="identity")
+
+sf_use_s2(FALSE)
+```
+
+Change names of the production areas
+```{r}
+prodareas_sf_prep2 <- prodareas_sf %>% 
+   mutate(
+    prod_area_name = str_replace_all(
+      name, pattern = "->", replacement = "-"
+    )
+  ) %>% 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = fixed("+"), replacement = "-"
+    )
+  ) %>% 
+  select(-name)
+```
+
+
+
+
+Load data - Aquaculture registry from 2019
+The shapefiles are loaded from bluetrans ftp, check the path!
+```{r}
+sites <- read_excel(path = "~/github/nor-prep/prep/administrative/data/Akvakulturregisteret_2019.xlsx", skip=1)
+```
+
+```{r}
+sites_prep <- sites |> 
+  clean_names() |> 
+  filter(produksjonsform %in% unique(str_subset(
+    produksjonsform, pattern = regex("[.]*MATFISK[ -]*")))) |> 
+  select(c(navn, n_geowgs84,o_geowgs84))
+
+```
+
+```{r}
+sites_sf <-st_as_sf(sites_prep, coords = c(3,2), crs = st_crs(4326))
+```
+
+
+
+# Mapping all the production regions and production sites
+
+```{r}
+world <- ne_countries(scale = "medium", returnclass = "sf")
+```
+
+```{r}
+base_map <- ggplot() +
+  geom_sf(
+   data = world, 
+   fill = "antiquewhite1", 
+   color = "dimgray", 
+   size = 0.3) +
+  theme(axis.text.x = element_text(size = 10,  color = "grey51"),
+        axis.text.y = element_text(size = 10,  color = "grey51"),
+        legend.text = element_text(size = 15),
+        legend.title = element_text(size = 15,  face = "bold"),
+        panel.background = element_rect(fill = "aliceblue") ,
+        panel.grid.major = element_line(color = "#dbdbd9", linetype = "dashed", size = 0.2),
+        plot.title = element_text(hjust = 0.5, vjust = 0.5, size = 17, face = "bold")
+  ) +
+  scale_x_continuous(breaks = c(5,10,15,20, 25,30)) +
+  geom_sf(
+    fill = NA,
+    data = prodareas_sf_prep2,
+    color = "midnightblue",
+    size = 0.8
+  ) +
+  coord_sf(xlim = c(2, 34), ylim = c(55, 75), expand = FALSE) +
+  labs(x = "Longitude", y = "Latitude") +
+  labs(
+    x = NULL,
+    y = NULL
+  ) 
+
+#prodareas_sf_prep2 <- st_make_valid(prodareas_sf_prep2)
+```
+
+```{r}
+main_map <- base_map +
+  geom_sf_text(data = prodareas_names_prep2,
+    aes(X,Y,label = id), fontface = "bold", size = 5)
+              
+```
+
+```{r}
+prodareas_names <- cbind(prodareas_sf_prep2,st_coordinates(st_centroid(prodareas_sf_prep2)))
+
+
+prodareas_names_prep2 <- prodareas_names %>% 
+  st_set_geometry(., NULL) %>% 
+  mutate(Y = replace(
+    Y,
+    prod_area_name == "Svenskegrensen - Jæren",
+    58.2
+  )) %>% 
+  st_as_sf(.,  coords = c("X", "Y"), crs = 4326, remove = FALSE, agr = "identity")
+
+```
+
+```{r}
+main_map2 <- base_map +
+  geom_sf(data=sites_sf, color="darkgreen", size = 0.7) +
+    geom_sf_text(data = prodareas_names_prep2,
+    aes(X,Y,label = id), fontface = "bold", size = 6, color = "darkred") +
+  coord_sf(xlim = c(2, 34), ylim = c(55, 75), expand = FALSE)
+              
+```
+And without id numbers of prodareas:
+
+```{r}
+main_map2 <- base_map +
+  geom_sf(data=sites_sf, color="darkgreen", size = 0.7) +
+  coord_sf(xlim = c(2, 34), ylim = c(55, 75), expand = FALSE)
+```
+
+
+```{r}
+ggsave("./figs/aquasites_n_regions.pdf", main_map2, width = 6, height = 10, dpi = 300)
+```
+
+
+# Mapping  selected production regions  and production sites
+
+Here i focus only on production regions 3,4,9 and 12, and I add aquaculture sites located in the only.
+
+First, i need to define intersection between areas 3,4,9,12 and all the production sites coordinates.
+
+```{r}
+prodareas_selected <- prodareas_sf_prep2 |> 
+  filter(id %in% c(3,4,9,12))
+```
+
+
+```{r}
+sites_intersecting <- st_intersection(prodareas_selected, sites_sf)
+```
+
+Plotting intersecting sites and prodareas. Here I have to replot the base map, because it includes all the production areas but I need only 4 of them
+
+```{r}
+main_map3 <- ggplot() +
+  geom_sf(
+   data = world, 
+   fill = "antiquewhite1", 
+   color = "dimgray", 
+   size = 0.3) +
+  theme(axis.text.x = element_text(size = 10,  color = "grey51"),
+        axis.text.y = element_text(size = 10,  color = "grey51"),
+        legend.text = element_text(size = 15),
+        legend.title = element_text(size = 15,  face = "bold"),
+        panel.background = element_rect(fill = "aliceblue") ,
+        panel.grid.major = element_line(color = "#dbdbd9", linetype = "dashed", size = 0.2),
+        plot.title = element_text(hjust = 0.5, vjust = 0.5, size = 17, face = "bold")
+  ) +
+  scale_x_continuous(breaks = c(5,10,15,20, 25,30)) +
+   geom_sf(
+    fill = NA,
+    data = prodareas_selected,
+    color = "midnightblue",
+    size = 0.8) +
+  geom_sf(
+    data = sites_intersecting,
+    color="darkgreen", size = 0.7) +
+  coord_sf(xlim = c(2, 34), ylim = c(55, 75), expand = FALSE)
+
+```
+
+
+```{r}
+ggsave("./figs/aquasites_n_4regions.pdf", main_map3, width = 6, height = 10, dpi = 300)
+```
+
+# Coloring polygons of prodareas
+
+
+```{r}
+addalpha <- function(colors, alpha=0.5) {
+  r <- col2rgb(colors, alpha=T)
+  # Apply alpha
+  r[4,] <- alpha*255
+  r <- r/255.0
+  return(rgb(r[1,], r[2,], r[3,], r[4,]))
+}
+
+cols <-addalpha("darkred")
+```
+
+
+```{r}
+main_map4 <- base_map +
+  geom_sf(data = prodareas_selected, fill = cols)  +
+  geom_sf(data=sites_sf, color="grey39", size = 0.7) +
+  coord_sf(xlim = c(2, 34), ylim = c(55, 75), expand = FALSE)
+```
+
+```{r}
+ggsave("./figs/aquasites_n_4regions_shaded.pdf", main_map4, width = 6, height = 10, dpi = 300)
+```

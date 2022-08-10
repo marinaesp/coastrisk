@@ -324,7 +324,7 @@ mutate(discarded_kg = discared_fish * 5) %>%
 ```
 
 Some of the total production values will be negative, because we cannot control for the precise weight of the added fish (and some may not be registered at all).
-167 out of 2315 observations are negative, about 6%.
+167 out of 2618 observations are negative, about 6%.
 ```{r}
 aqua_prep8 %>% filter(production_final < 0) %>% tally()
 ```

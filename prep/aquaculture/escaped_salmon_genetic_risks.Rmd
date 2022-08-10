@@ -1,0 +1,68 @@
+---
+title: "Risk of escaped salmon introgression"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: haddock
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r additional libraries, inlcude = FALSE, message=FALSE}
+library(data.table)
+library(vroom)
+library(rebus)
+library(here)
+```
+
+Here, I will prepare and index on escaped salmon genetic introgression risk. I will base this index on the monitoring program done by IMR, where researchers combine data on both likely numer of escapees in the rivers and the status of the wild salmon stock (both genetic status and spawning status). All the information pertaining to this monitoring program is presented in the Aquaculture risk assessment report here:
+https://www.hi.no/hi/nettrapporter/rapport-fra-havforskningen-2021-8#sec-5
+
+# Prepare a table on production areas and their risks
+I will use production areas from the momb table, but any table can be used
+
+```{r}
+prod_areas <- read.csv("./data/output/momb_per_prodarea.csv")
+
+prod_areas_df <- prod_areas |> 
+  select(c(prod_area_id, prod_area_name)) |> 
+  group_by(prod_area_id, prod_area_name) |> 
+  slice_head()
+
+```
+
+The categoreis of risk will be as: 1-low, 2 -moderate, 3-high (actually, it is not the risk itself but a distance from a desired status of genetic introgression, but same idea)
+```{r}
+escape_risk <- tibble(
+  prod_area_id = c(1:13),
+  risk  = c(1, 1,3,3,2,2,3,3,3,3,3,2,1)
+)
+```
+
+Merge the two tables
+
+```{r}
+escape_risk_final <- prod_areas_df |> 
+  left_join(escape_risk, by = "prod_area_id") |> 
+  rename(escapees_risk = risk)
+```
+
+Save the final table
+
+```{r}
+write.csv(escape_risk_final, "./data/output/escpaees_risk_per_prodarea.csv", row.names = FALSE)
+```
+

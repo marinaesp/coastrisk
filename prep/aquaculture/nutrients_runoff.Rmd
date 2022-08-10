@@ -31,6 +31,9 @@ library(sf)
 
 # Load the shapefiles
 
+
+https://github.com/NIVANorge/teotil2/tree/main/data/norway_annual_output_data
+
 First, I load the shapefile of production areas and a shape file of vassdragsomrader
 
 ```{r}
@@ -148,7 +151,7 @@ water_in_prodarea4 <- water_in_prodarea3 |>
 
 # Prepare data on nutrients runoff
 
-There ae data for years 1994-2019 but i will only use data for 2000-2019
+There are data for years 1994-2019 but i will only use data for 2000-2019
 
 ```{r}
 #year <- readOGR(dsn = "/Volumes/ftp.imr.no/ProductionAreas/OGRgeoJSON_prodomr")

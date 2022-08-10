@@ -1,0 +1,65 @@
+---
+title: "Standardized aqua production per PA "
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: haddock
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r additional libraries, inlcude = FALSE}
+library(data.table)
+library(vroom)
+library(rebus)
+library(here)
+library(sf)
+library("ggsci")
+```
+
+
+Here i will standardize aquaculture produciton for each zone (PA). I standardize by taking the maximal production that was observed in 2019 and take it as 1, then all the other PA would have production as a proportion to that maximum. That is, 0.4, 0.05, 0.99, etc.
+Next, we will be able to do barplots based on this standardized values (the professions desinger will do that for us). 
+
+
+Read the data
+```{r}
+production <- read.csv("./data/output/annual_aqua_production_per_prodregion.csv")
+```
+
+Filter year 2019 and define the maximum
+
+```{r}
+prod_st <- production |> 
+  filter(year == "2019") |> 
+  mutate(production_ton = production_per_region/1000) |> 
+  mutate(standardized_production_ton = production_ton/max(production_ton)) |> 
+  mutate(prod_area_id_name = str_c(prod_area_id, prod_area_name, sep = ": ")) |> 
+  select(year, prod_area_id_name, prod_area_name, prod_area_id, production_ton, standardized_production_ton)
+```
+
+
+```{r}
+write_csv(prod_st, file = "./data/output/standardized_production_by_maximum_2019.csv")
+```
+
+I will also save the table of production areas names and ids
+
+```{r}
+prod_ares_ids <-prod_st |>  select(prod_area_id_name, prod_area_name, prod_area_id )
+write_csv(prod_ares_ids, file = "./data/output/prod_areas.csv")
+```
+

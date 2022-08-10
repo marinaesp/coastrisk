@@ -1,0 +1,332 @@
+---
+title: "Preparing data for waste water treatment sector"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: haddock
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r}
+library(sf)
+library(mapdata)
+library(maptools)
+library(rgdal)
+library(rgeos)
+library(maps)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(stringr)
+```
+
+
+Here I will prepare data relevant for waste water treatment: discharge of total organic material by water treatment stations, N and P discharge by treatment plants, and the nubmer of plants per production area.
+
+
+
+# Load the data
+First, the data on water treatment
+
+The data is until 2020, but many missing values in year 2020
+```{r}
+anlegg <- readxl::read_excel("./data/raw/all_sewage_types_per_county.xlsx", sheet = 1,
+                   range = "B3:V22")
+
+organic <- readxl::read_excel("./data/raw/organic_discharge_sewage.xlsx", sheet = 1,
+                   range = "A3:O41")
+
+
+np <- readxl::read_excel("./data/raw/total_n_p_discharge_sewage.xlsx", sheet = 1,
+                   range = "A3:V41")
+```
+
+And this is the data on association between municipalities, counties and aquacutlure production areas.
+It was made by Anna Siwertsson, original table is on the coastrisk ftp, folder ProductionAreas.
+
+```{r}
+mcp_pa <- read_delim("../aquaculture/data/raw/municipality_productionarea.csv", delim = " ")
+```
+
+# Cleaning waste water treatment datasets
+
+## Number of stations
+
+I extract countys' names and replace . with NA (these are unreliable data, as SSB explains)
+```{r}
+colnames(anlegg)[c(1,2)] <- c("county_year", "undefined") 
+
+anlegg_prep <- anlegg |> 
+  select(-undefined) |> 
+  clean_names() |> 
+  mutate(county = stringr::word(county_year, start = 2)) |> 
+  mutate(county_number = stringr::word(county_year, start = 1)) |> 
+  mutate(across(c("x2002": "x2020"), as.numeric)) |> 
+  select(-county_year) |> 
+  pivot_longer(cols = starts_with("x"),
+                        names_to = "year",
+                        values_to = "number_of_stations") |> 
+  mutate(year = str_extract(year, pattern = "[[:digit:]]{4}"))
+  
+  
+```
+
+Now i can merge the table of anlegg with production zones
+
+I need a county number from the table on production zones, in this table the column of counties' numbers is mistakenly called kommunenummer. I will change that.
+```{r}
+mcp_pa_prep <-mcp_pa |> 
+  rename(county_number = kommunenummer) |> 
+  select(county_number, name)
+```
+
+
+Merge the two tables
+```{r}
+anlegg_per_pa <- anlegg_prep |> 
+  left_join(mcp_pa_prep, by = "county_number")
+```
+
+
+There are mismatches in the tables because Oslo should be 03 in the anlegg table, Sor and Nord-Trondelag both should be 
+50, since they have merged in 2018
+
+https://www.regjeringen.no/no/dokument/dep/kdd/andre-dokumenter/brev/utvalgte_brev/2016/nye-fylkes--og-kommunenummer---trondelag-fylke/id2513267/
+
+https://www.regjeringen.no/no/tema/kommuner-og-regioner/kommunestruktur/nyekommuneogfylkesnummer/id2629203/?expand=factbox2629210
+
+```{r}
+anlegg_prep2 <- anlegg_prep |> 
+  mutate(county_number =replace(
+    county_number,
+    county_number == "02-03",
+    "03"
+  )) |> 
+  mutate(county_number = replace(
+    county_number,
+    county_number == "16",
+    "50"
+  )) |> 
+  mutate(county_number = replace(
+    county_number,
+    county_number == "17",
+    "50"
+  ))
+```
+
+And merge the tables again
+
+```{r}
+anlegg_per_pa <- anlegg_prep2 |> 
+  left_join(mcp_pa_prep, by = "county_number")
+```
+
+Now there are only Hedmark and Oppland fylker (located innand) that did not match, because production areas do not overlap with them. I just remove them from the table.
+
+Finally, I aggregate the data per production area and edit production areas' names. 
+```{r}
+anlegg_per_pa2 <- anlegg_per_pa |> 
+  filter(!county  %in% c("Hedmark", "Oppland")) |> 
+  group_by(year, name) |> 
+  summarize(number_of_station_pa = sum(number_of_stations, na.rm=T)) |> 
+  mutate(prod_area_id = word(name, start = 1)) |> 
+  mutate(prod_area_name = str_replace(name, pattern = "^[0-9]+", replacement = "")) |> 
+  select(-name) |> 
+     mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = "->", replacement = "-"
+    )
+  )|> 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = fixed("+"), replacement = "-"
+    )
+  ) |> 
+  mutate(prod_area_name2 = str_c(prod_area_id, prod_area_name, sep = ": "))
+
+```
+
+
+```{r}
+purrr::map(anlegg_per_pa2, ~ sum(is.na(.x)))
+```
+
+Save this table
+```{r}
+write_csv(anlegg_per_pa2, "./data/output/water_treatment_stations_per_prodarea.csv")
+```
+
+
+##  Organic discharge from waste waters
+
+The manipulations of this dataset will be similar to the number of stations table (above). Note that this series begins in 2008, not in 2002 like total number of stations table.
+```{r}
+colnames(organic)[c(1,2)] <- c("method","county_year")
+
+organic_prep <- organic |> 
+  clean_names() |> 
+  fill(method) |> 
+  mutate(county = stringr::word(county_year, start = 2)) |> 
+  mutate(county_number = stringr::word(county_year, start = 1)) |> 
+  mutate(across(c("x2008": "x2020"), as.numeric)) |> 
+  select(-county_year) |> 
+  pivot_longer(cols = starts_with("x"),
+                        names_to = "year",
+                        values_to = "organic_discharge_tonn") |> 
+  mutate(year = str_extract(year, pattern = "[[:digit:]]{4}"))
+```
+```{r}
+organic_prep2 <- organic_prep |> 
+  mutate(county_number =replace(
+    county_number,
+    county_number == "02-03",
+    "03"
+  )) |> 
+  mutate(county_number = replace(
+    county_number,
+    county_number == "16",
+    "50"
+  )) |> 
+  mutate(county_number = replace(
+    county_number,
+    county_number == "17",
+    "50"
+  ))
+```
+
+
+Merge organic waste table with production areas table
+```{r}
+organic_per_pa <- organic_prep2 |> 
+  left_join(mcp_pa_prep, by = "county_number")
+```
+
+As before, there is no match for Hedmark and Oppdal, I remove them from the final table
+ 
+```{r}
+organic_per_pa2 <- organic_per_pa |> 
+  filter(!county  %in% c("Hedmark", "Oppland")) |> 
+  group_by(method, year, name) |> 
+  summarize(organic_discharge_ton = sum(organic_discharge_tonn, na.rm=T)) |> 
+  mutate(prod_area_id = word(name, start = 1)) |> 
+  mutate(prod_area_name = str_replace(name, pattern = "^[0-9]+", replacement = "")) |> 
+  select(-name) |> 
+     mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = "->", replacement = "-"
+    )
+  )|> 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = fixed("+"), replacement = "-"
+    )
+  ) |> 
+  mutate(prod_area_name2 = str_c(prod_area_id, prod_area_name, sep = ": "))
+
+```
+
+Save the table
+
+```{r}
+write_csv(organic_per_pa2, "./data/output/organic_discharge_per_prodarea.csv")
+```
+
+
+## N and P discharge
+
+```{r}
+colnames(np)[c(1,2,3)] <- c("element", "county_year", "undefined")
+
+np_prep <- np |> 
+  select(-undefined) |> 
+  fill(element) |> 
+  clean_names() |> 
+  mutate(county = stringr::word(county_year, start = 2)) |> 
+  mutate(county_number = stringr::word(county_year, start = 1)) |> 
+  mutate(across(c("x2002": "x2020"), as.numeric)) |> 
+  select(-county_year) |> 
+  pivot_longer(cols = starts_with("x"),
+                        names_to = "year",
+                        values_to = "NP_discharge_ton") |> 
+  mutate(year = str_extract(year, pattern = "[[:digit:]]{4}")) |> 
+  pivot_wider(names_from = element,
+              values_from = NP_discharge_ton) 
+
+
+  
+```
+
+```{r}
+colnames(np_prep)[c(4,5)] <- c("P_ton", "N_ton")
+```
+
+
+```{r}
+np_prep2 <- np_prep |> 
+  mutate(county_number =replace(
+    county_number,
+    county_number == "02-03",
+    "03"
+  )) |> 
+  mutate(county_number = replace(
+    county_number,
+    county_number == "16",
+    "50"
+  )) |> 
+  mutate(county_number = replace(
+    county_number,
+    county_number == "17",
+    "50"
+  ))
+```
+
+
+Merge np waste table with production areas table
+```{r}
+np_per_pa <- np_prep2 |> 
+  left_join(mcp_pa_prep, by = "county_number")
+```
+
+No match for Hedmark and Oppdal, I remove them 
+ 
+```{r}
+np_per_pa2 <- np_per_pa |> 
+  filter(!county  %in% c("Hedmark", "Oppland")) |> 
+  group_by(year, name) |> 
+  summarize(N_discharge_ton = sum(N_ton, na.rm=T),
+            P_discharge_ton = sum(P_ton, na.rm=T)) |> 
+  mutate(prod_area_id = word(name, start = 1)) |> 
+  mutate(prod_area_name = str_replace(name, pattern = "^[0-9]+", replacement = "")) |> 
+  select(-name) |> 
+     mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = "->", replacement = "-"
+    )
+  )|> 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = fixed("+"), replacement = "-"
+    )
+  ) |> 
+  mutate(prod_area_name2 = str_c(prod_area_id, prod_area_name, sep = ": "))
+
+```
+
+Save the table
+
+```{r}
+write_csv(np_per_pa2, "./data/output/NP_discharge_per_prodarea.csv")
+```
+

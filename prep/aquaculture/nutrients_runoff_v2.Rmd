@@ -161,23 +161,23 @@ water_in_prodarea4 <- water_in_prodarea3 |>
 
 # Prepare data on nutrients runoff
 
-There ae data for years 1994-2019 but i will only use data for 2000-2019
+There are data for years 1994-2019 but i will only use data for 2000-2019
 
 ```{r}
 #year <- readOGR(dsn = "/Volumes/ftp.imr.no/ProductionAreas/OGRgeoJSON_prodomr")
 
-runoff_00_19 <- list.files(
+runoff_00_20 <- list.files(
   path = file.path("/Volumes/ftp.imr.no/aquaculture/teotil_runoff_data/norway_annual_output_data"), 
   pattern = ".20[[:digit:]]{2}.csv",
   full.names = T) 
   
 
-runoff_prep <- map(runoff_00_19, 
+runoff_prep <- map(runoff_00_20, 
                   ~ vroom::vroom(.x,
   .name_repair = ~ janitor::make_clean_names(.)
   ))
 
-names <- seq(2000, 2019, by = 1)
+names <- seq(2000, 2020, by = 1)
 names(runoff_prep) <- names
 
 
@@ -198,7 +198,7 @@ runoff_prep3 <- map(runoff_prep2, ~
   do.call("rbind", .)
 ```
 
-I need also to add a column called "vassdragomrade" which will be an ID column for merging the tables/
+I need also to add a column called "vassdragomrade" which will be an ID column for merging the tables
 I remove all the rows where data is aggregated per marine area, i keep just the row where data is per vassdragsomrade and delomrader inside it.
 
 ```{r}
@@ -211,7 +211,7 @@ runoff_prep4 <-runoff_prep3 |>
 ```
 
 
-We have two possibilities: either keep data per delomrade and take a sum over vassdragsomrader, but there are also rows where amount of ruoff already accumulated over vassdragsomrade but we cannot see the local sources alone there.
+We have two possibilities: either keep data per delomrade and take a sum over vassdragsomrader, but there are also rows where amount of ruoff already accumulated over vassdragsomrade, but we cannot see the local sources alone there.
 I will filter for the rows where we can have values per delomrade from the local sources.
 We will use the columns with data on local contributions of N and P.
 
@@ -238,13 +238,13 @@ nonmatch <- filter(runoff_prep6, is.na(prod_area_name)) |> group_by(vassdragsomr
 
 nonmatch
 ```
-Examples of vassdrags that had no match in runoff taboe  (means  they do not intersect with aquaculture production areas):
+Examples of vassdrags that had no match in runoff table  (means  they do not intersect with aquaculture production areas):
 Dalelven,
 Kemijoki,
 Torneelven,
 Umeelven
 
-Semms like it's all the rivers that cross the border between Norway and Sweden or Norway and Finland.
+Seems like it's all the rivers that cross the border between Norway and Sweden or Norway and Finland.
 
 
 
@@ -252,12 +252,8 @@ Semms like it's all the rivers that cross the border between Norway and Sweden o
 # Save the final table
 
 ```{r}
-write.csv(runoff_prep6, "./data/output/n_p_runoff_per_vadssdragomr_version2.csv")
+write.csv(runoff_prep6, "./data/output/n_p_runoff_per_vassdragsomr_version2.csv")
 ```
 
 
-
-```{r}
-
-```
 

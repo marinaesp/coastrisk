@@ -1,0 +1,39 @@
+---
+title: "Transportation along the coast"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: haddock
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r additional libraries, inlcude = FALSE, message=FALSE}
+library(data.table)
+library(vroom)
+library(rebus)
+library(here)
+```
+
+
+# Load the data on transport
+
+```{r}
+transport <- read.table(here("prep", "transport",  "transport2015_2019samlet.txt"), header = TRUE)
+```
+
+

@@ -1,0 +1,300 @@
+---
+title: "Edge bunding diagram for paper 5"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: haddock
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r additional libraries, inlcude = FALSE, message=FALSE}
+library(data.table)
+library(vroom)
+library(rebus)
+library(here)
+library(ggraph)
+library(igraph)
+library(tidyverse)
+library(RColorBrewer)
+```
+
+# Load the data
+
+These are the edges table - sectors, pressures and ecosystems and the next is connections - how they are connected to each other
+
+```{r}
+edges <- read_excel("./data/edges_connect.xlsx", sheet = 2)
+connect <- read_excel("./data/edges_connect.xlsx", sheet = 1)
+```
+
+
+There are some item names that are too long, they don't fit on the figure. So, I will create some abbreviations for: 
+```{r}
+connect_prep <- connect |> 
+  select(c(From, To)) |> 
+  rename(from = From,
+         to = To)
+
+edges_prep <- edges |> 
+    select(c(From, To)) |> 
+  rename(from = From,
+         to = To)
+
+```
+
+The longest strings:
+```{r}
+connect_prep[which(str_length(connect_prep$to) >= 15),]
+```
+We can make these text strings a little shorter with abbreviations
+
+```{r}
+connect_prep2 <-connect_prep |> 
+  mutate(to = replace(to,to == "Genetic introgression", "Genetic intr.")) |> 
+  mutate(to = replace(to,to == "Physiological impact", "Physiological imp.")) |> 
+  mutate(to = replace(to,to == "Non-indigenous species", "Alien spp.")) |> 
+  mutate(to = replace(to,to == "Currents and circualtion", "Currents and circ.")) |> 
+  mutate(to = replace(to,to == "Benthic communities", "Benthic comm.")) |> 
+  mutate(to = replace(to,to == "Species extraction", "Species extr.")) |> 
+  mutate(to = replace(to,to == "Human population and tourism", "Human population")) |> 
+  mutate(to = replace(to,to == "Biochecmical habitat change", "Biochemical eff.")) |> 
+  mutate(from = replace(from,from == "Genetic introgression", "Genetic intr.")) |> 
+  mutate(from = replace(from,from == "Physiological impact", "Physiological imp.")) |> 
+  mutate(from = replace(from,from == "Biochecmical habitat change", "Biochemical eff.")) |> 
+  mutate(from = replace(from,from == "Non-indigenous species", "Non-indigenous spp.")) |> 
+  mutate(from = replace(from,from == "Currents and circualtion", "Currents and circ.")) |> 
+  mutate(from = replace(from,from == "Shipping and transportation", "Shipping and transp.")) |> 
+  mutate(from = replace(from,from == "Species extraction", "Species extr.")) |> 
+  mutate(from = replace(from,from == "Human population and tourism", "Human population")) |> 
+ mutate(from = replace(from,from == "Recreational fisheries", "Recreational fish."))
+
+```
+
+We do all the same manipulations with edges table (column to)
+
+```{r}
+edges_prep2 <- edges_prep |> 
+  mutate(to = replace(to,to == "Genetic introgression", "Genetic intr.")) |> 
+  mutate(to = replace(to,to == "Physiological impact", "Physiological imp.")) |> 
+  mutate(to = replace(to,to == "Non-indigenous species", "Alien spp.")) |> 
+  mutate(to = replace(to,to == "Currents and circualtion", "Currents and circ.")) |> 
+  mutate(to = replace(to,to == "Benthic communities", "Benthic comm.")) |> 
+  mutate(to = replace(to,to == "Genetic introgression", "Genetic intr.")) |> 
+  mutate(to = replace(to,to == "Physiological impact", "Physiological imp.")) |> 
+  mutate(to = replace(to,to == "Biochecmical habitat change", "Biochemical eff."))  |> 
+  mutate(to = replace(to,to == "Non-indigenous species", "Alien spp.")) |> 
+  mutate(to = replace(to,to == "Currents and circualtion", "Currents and circ.")) |> 
+  mutate(to = replace(to,to == "Shipping and transportation", "Shipping and transp.")) |> 
+  mutate(to = replace(to,to == "Military activities", "Military act.")) |> 
+  mutate(to = replace(to,to == "Species extraction", "Species extr."))  |> 
+  mutate(to = replace(to,to == "Human population and tourism", "Human population")) |> 
+  mutate(to = replace(to,to == "Recreational fisheries", "Recreational fish."))
+```
+
+
+# Prepare the main table of connections
+
+I am adding a fake value column, just to try. I can remove it later and add "real" values for circles (scaled or standardized values)
+```{r}
+myvertices  <-  data.frame(
+  name = unique(c(as.character(edges_prep$from), as.character(edges_prep$to))) ,
+  value = runif(60)
+) 
+```
+
+
+The group column specifies where the vertex comes from, or a closest higher level. For instance, origin will have NA, while sectors and pressures will have origin as a group (as closest next level above).
+
+```{r}
+myvertices$group  <-  edges_prep$from[ match( myvertices$name, edges_prep$to ) ]
+```
+
+More attributes for plotting.
+ID is a number of a component except the components that are defining classification (sector, pressure, ecosystem). So everything else are the components (called subgroups in the example codes)
+```{r}
+myvertices$id <- NA
+myleaves <- which(is.na( match(myvertices$name, edges_prep$from) ))
+mynleaves <- length(myleaves)
+myvertices$id[ myleaves ] <- seq(1:mynleaves)
+```
+
+
+```{r}
+# Create a graph object
+mygraph <- igraph::graph_from_data_frame( edges_prep, vertices=myvertices )
+ 
+# The connection object must refer to the ids of the leaves:
+from  <-  match( connect_prep$from, myvertices$name)
+to  <-  match( connect_prep$to, myvertices$name)
+```
+
+## Default plot
+
+```{r, fig.width=9, fig.height=9}
+ggraph(mygraph, layout = 'dendrogram', circular = TRUE) + 
+  geom_conn_bundle(data = get_con(from = from, to = to), alpha=0.2, width=0.9, aes(colour=..index..)) +
+  scale_edge_colour_distiller(palette = "RdPu", na.value = "grey50") +
+  
+  geom_node_text(aes(x = x*1.15, y=y*1.15, filter = leaf, label=name, 
+                     angle = pmax((acos(x/(((x^2)+(y^2))^0.5))*sign(y)*180/pi-((sign(x)==-1)*(sign(y)==1)*180)+((sign(x)==-1)*(sign(y)==-1)*180)),-180,na.rm=TRUE), 
+                     hjust=(sign(x)==-1), 
+                     colour=group), size=3.5, alpha=1) +
+  
+  geom_node_point(aes(filter = leaf, x = x*1.07, y=y*1.07, colour=group, size=value, alpha=0.2)) +
+  scale_colour_manual(values= rep( brewer.pal(5,"Dark2") , 30)) +
+  scale_size_continuous( range = c(0.1,10) ) +
+  
+  theme_void() +
+  theme(
+    legend.position="none",
+    plot.margin=unit(c(0,0,0,0),"cm"),
+  ) +
+  expand_limits(x = c(-1.3, 1.3), y = c(-1.3, 1.3))
+```
+
+## Plot without scaling the circles
+
+```{r , fig.width=9, fig.height=9}
+ggraph(mygraph, layout = 'dendrogram', circular = TRUE) + 
+  geom_conn_bundle(data = get_con(from = from, to = to), alpha=0.2, width=0.9, aes(colour=..index..)) +
+  scale_edge_colour_viridis(
+  alpha = 1,
+  begin = 0,
+  end = 1,
+  discrete = FALSE,
+  option = "D",
+  direction = 1
+) +
+  
+  geom_node_text(aes(x = x*1.15, y=y*1.15, filter = leaf, label=name, 
+                     angle = pmax((acos(x/(((x^2)+(y^2))^0.5))*sign(y)*180/pi-((sign(x)==-1)*(sign(y)==1)*180)+((sign(x)==-1)*(sign(y)==-1)*180)),-180,na.rm=TRUE), 
+                     hjust=(sign(x)==-1), 
+                     colour=group), size=3.5, alpha=1) +
+  
+  geom_node_point(aes(filter = leaf, x = x*1.07, y=y*1.07, colour=group, size=3, alpha=0.2)) +
+  scale_colour_manual(values= rep( brewer.pal(5,"Dark2") , 30)) +
+  scale_size_continuous( range = c(0.1,10) ) +
+  
+  theme_void() +
+  theme(
+    legend.position="none",
+    plot.margin=unit(c(0,0,0,0),"cm"),
+  ) +
+  expand_limits(x = c(-1.3, 1.3), y = c(-1.3, 1.3))
+```
+
+## Plot with a blue-yellow gradient for connecting curves
+
+```{r fig.width=9, fig.height=9}
+ggraph(mygraph, layout = 'dendrogram', circular = TRUE) + 
+  geom_conn_bundle(data = get_con(from = from, to = to), alpha=0.2, width=0.9, aes(colour=..index..)) +
+  scale_edge_colour_gradient(
+    low = "#FFC20A",
+    high = "#0C7BDC",
+    space = "Lab",
+    na.value = "grey50"
+  ) +
+  
+  geom_node_text(aes(x = x*1.15, y=y*1.15, filter = leaf, label=name, 
+                     angle = pmax((acos(x/(((x^2)+(y^2))^0.5))*sign(y)*180/pi-((sign(x)==-1)*(sign(y)==1)*180)+((sign(x)==-1)*(sign(y)==-1)*180)),-180,na.rm=TRUE), 
+                     hjust=(sign(x)==-1), 
+                     colour=group), size=3.5, alpha=1) +
+  
+  geom_node_point(aes(filter = leaf, x = x*1.07, y=y*1.07, colour=group, size=3, alpha=0.2)) +
+  scale_colour_manual(values= rep( brewer.pal(5,"Dark2") , 30)) +
+  scale_size_continuous( range = c(0.1,10) ) +
+  
+  theme_void() +
+  theme(
+    legend.position="none",
+    plot.margin=unit(c(0,0,0,0),"cm"),
+  ) +
+  expand_limits(x = c(-1.3, 1.3), y = c(-1.3, 1.3))
+```
+
+
+```{r}
+ggsave("./edge_bunding_p5.pdf", width = 15, height = 15, dpi = 300)
+```
+
+
+
+
+# Repeat the plotting with abbreivated item names
+
+```{r}
+myvertices2  <-  data.frame(
+  name = unique(c(as.character(edges_prep2$from), as.character(edges_prep2$to))) ,
+  value = runif(60)
+) 
+```
+
+
+
+```{r}
+myvertices2$group  <-  edges_prep2$from[ match( myvertices2$name, edges_prep2$to ) ]
+```
+
+
+```{r}
+myvertices2$id <- NA
+myleaves2 <- which(is.na( match(myvertices2$name, edges_prep2$from) ))
+mynleaves2 <- length(myleaves2)
+myvertices2$id[ myleaves2 ] <- seq(1:mynleaves2)
+```
+
+
+```{r}
+# Create a graph object
+mygraph2 <- igraph::graph_from_data_frame( edges_prep2, vertices=myvertices2 )
+ 
+# The connection object must refer to the ids of the leaves:
+from2  <-  match( connect_prep2$from, myvertices2$name)
+to2  <-  match( connect_prep2$to, myvertices2$name)
+```
+
+```{r fig.width=9, fig.height=9}
+ggraph(mygraph2, layout = 'dendrogram', circular = TRUE) + 
+  geom_conn_bundle(data = get_con(from = from2, to = to2), alpha=0.2, width=0.9, aes(colour=..index..)) +
+  scale_edge_colour_gradient(
+    low = "#FFC20A",
+    high = "#0C7BDC",
+    space = "Lab",
+    na.value = "grey50"
+  ) +
+  
+  geom_node_text(aes(x = x*1.15, y=y*1.15, filter = leaf, label=name, 
+                     angle = pmax((acos(x/(((x^2)+(y^2))^0.5))*sign(y)*180/pi-((sign(x)==-1)*(sign(y)==1)*180)+((sign(x)==-1)*(sign(y)==-1)*180)),-180,na.rm=TRUE), 
+                     hjust=(sign(x)==-1), 
+                     colour=group), size=3.5, alpha=1) +
+  
+  geom_node_point(aes(filter = leaf, x = x*1.07, y=y*1.07, colour=group, size=3, alpha=0.2)) +
+  scale_colour_manual(values= rep( brewer.pal(5,"Dark2") , 30)) +
+  scale_size_continuous( range = c(0.1,10) ) +
+  
+  theme_void() +
+  theme(
+    legend.position="none",
+    plot.margin=unit(c(0,0,0,0),"cm"),
+  ) +
+  expand_limits(x = c(-1.3, 1.3), y = c(-1.3, 1.3))
+```
+
+
+```{r}
+ggsave("./edge_bunding_p5_abbreviated.pdf", width = 12, height = 12, dpi = 300)
+```

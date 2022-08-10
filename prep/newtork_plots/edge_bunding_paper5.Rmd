@@ -1,0 +1,114 @@
+---
+title: "Edge bunding diagram for paper 5"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: haddock
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r additional libraries, inlcude = FALSE, message=FALSE}
+library(data.table)
+library(vroom)
+library(rebus)
+library(here)
+library(ggraph)
+library(igraph)
+library(tidyverse)
+library(RColorBrewer)
+```
+
+# Load the data
+
+These are the edges table - sectors, pressures and ecosystems and the next is connections - how they are connected to each other
+
+```{r}
+edges <- read.csv("./data/edges.csv")
+connect <- read.csv("./data/connections.csv")
+```
+
+```{r}
+connect_prep <- connect |> 
+  select(c(From, To)) |> 
+  rename(from = From,
+         to = To)
+
+```
+
+
+# Prepare the main table of connections
+
+I am adding a fake value column, just to try. I can remove it later and add "real" values for circles (scaled or standardized values)
+```{r}
+myvertices  <-  data.frame(
+  name = unique(c(as.character(edges$from), as.character(edges$to))) ,
+  value = runif(59)
+) 
+```
+
+
+The group column specifies where the vertex comes from, or a closest higher level. For instance, origin will have NA, while sectors and pressures will have origin as a group (as closest next level above).
+
+```{r}
+myvertices$group  <-  edges$from[ match( myvertices$name, edges$to ) ]
+```
+
+More attributes for plotting.
+ID is a number of a component except the components that are defining classification (sector, pressure, ecosystem). So everything else are the components (called subgroups in the example codes)
+```{r}
+myvertices$id <- NA
+myleaves <- which(is.na( match(myvertices$name, edges$from) ))
+mynleaves <- length(myleaves)
+myvertices$id[ myleaves ] <- seq(1:mynleaves)
+```
+
+```{r}
+# Create a graph object
+mygraph <- igraph::graph_from_data_frame( edges, vertices=myvertices )
+ 
+# The connection object must refer to the ids of the leaves:
+from  <-  match( connect_prep$from, myvertices$name)
+to  <-  match( connect_prep$to, myvertices$name)
+```
+
+
+```{r, fig.width=9, fig.height=9}
+ggraph(mygraph, layout = 'dendrogram', circular = TRUE) + 
+  geom_conn_bundle(data = get_con(from = from, to = to), alpha=0.2, width=0.9, aes(colour=..index..)) +
+  scale_edge_colour_distiller(palette = "Blues") +
+  
+  geom_node_text(aes(x = x*1.15, y=y*1.15, filter = leaf, label=name, 
+                     angle = pmax((acos(x/(((x^2)+(y^2))^0.5))*sign(y)*180/pi-((sign(x)==-1)*(sign(y)==1)*180)+((sign(x)==-1)*(sign(y)==-1)*180)),-180,na.rm=TRUE), 
+                     hjust=(sign(x)==-1), 
+                     colour=group), size=3.5, alpha=1) +
+  
+  geom_node_point(aes(filter = leaf, x = x*1.07, y=y*1.07, colour=group, size=value, alpha=0.2)) +
+  scale_colour_manual(values= rep( brewer.pal(5,"Dark2") , 30)) +
+  scale_size_continuous( range = c(0.1,10) ) +
+  
+  theme_void() +
+  theme(
+    legend.position="none",
+    plot.margin=unit(c(0,0,0,0),"cm"),
+  ) +
+  expand_limits(x = c(-1.3, 1.3), y = c(-1.3, 1.3))
+```
+
+```{r}
+ggsave("./edge_bunding_p5.pdf", width = 9, height = 9, dpi = 300)
+```
+

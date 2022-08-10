@@ -21,7 +21,7 @@ knitr::opts_chunk$set(echo = TRUE, message=FALSE)
 source('~/github/coastrisk/src/common.r')
 ```
 
-```{r additional libraries, inlcude = FALSE}
+```{r additional libraries, inlcude = FALSE, warning=F}
 library(data.table)
 library(vroom)
 library(rebus)
@@ -45,6 +45,46 @@ year2018 <-read_excel(file.path("/Volumes/ftp.imr.no/Aquaculture/Akvakultur_till
 
 ```
 
+Now two tables for 2019 and 2020. Actually, the registration of production sites is done in January 2020 and January 2021, but i will consider these as data for 2019 and 2020, respectively.
+
+```{r}
+year2019 <-read_excel(file.path("/Volumes/ftp.imr.no/Aquaculture/Akvakultur_tillatelser_2020/2020-01-06 Akvakulturregisteret.xlsx"), skip=1)
+year2020 <-read_excel(file.path("/Volumes/ftp.imr.no/Aquaculture/Akvakultur_tillatelser_2020/2021-01-04 Akvakulturregisteret.xlsx"), skip=1)
+```
+
+# Municipalities changes in 2020
+
+Since i add data for year 2019 and 2020, there will be mismatches with municipalities' names in the production areas table, because some municipaities, like in Finnmark, got new numbers in 2020.
+I can update municipalities' numbers in the year2020 table before i continue with further data curation.
+
+
+```{r}
+convert_mcp_2020 <- read_excel(file.path("../administrative/fylker_kommuner_2019_2020_changes.xlsx"))
+
+colnames(convert_mcp_2020) <- c("county_nr_19", 
+                                "county_name_19",
+                                "municip_number_19",
+                                "municip_name_19",
+                                "county_nr_20", 
+                                "county_name_20",
+                                "municip_number_20",
+                                "municip_name_20")
+
+convert_mcp_2020$municip_number_20 <- as.character(convert_mcp_2020$municip_number_20)
+```
+
+
+```{r}
+year2020_prep <- year2020 |> 
+  left_join(convert_mcp_2020[,c("municip_number_19","municip_number_20")],
+            by=c("LOK_KOMNR" = "municip_number_20")) |> 
+  mutate(LOK_KOMNR = ifelse(is.na(municip_number_19),
+                            LOK_KOMNR,
+                            municip_number_19)) |> 
+  select(-municip_number_19)
+```
+
+
 I need to homogenize data a bit before merging
 
 ```{r}
@@ -52,7 +92,7 @@ year2010<-year2010 %>% mutate(TILL_KAP = as.numeric(TILL_KAP),
                               LOK_KAP = as.numeric(LOK_KAP))
 
 
-tillatelser2010_18 <- bind_rows(year2010, year2011, year2012, year2013, year2014, year2015, year2017, year2018) %>%
+tillatelser2010_20 <- bind_rows(year2010, year2011, year2012, year2013, year2014, year2015, year2017, year2018, year2019, year2020_prep) %>%
   mutate(Year = c(
     rep(2010, nrow(year2010)),
     rep(2011, nrow(year2011)),
@@ -61,44 +101,42 @@ tillatelser2010_18 <- bind_rows(year2010, year2011, year2012, year2013, year2014
     rep(2014, nrow(year2014)),
     rep(2015, nrow(year2015)),
     rep(2017, nrow(year2017)),
-    rep(2018, nrow(year2018))
+    rep(2018, nrow(year2018)),
+    rep(2019, nrow(year2019)),
+    rep(2020, nrow(year2020_prep))
   )) %>%
   select(27, c(2:26))
          
 ```
 
- Filter out North-Norwegian municipalities
-```{r}
-tillatelser2010_18_nord <- tillatelser2010_18 %>% filter(TILL_KOMNR >= 1800 & TILL_KOMNR <= 2100)
-```
 
-
-# Clean the licences data
+# Clean the data
 What are the production types that are in the table?
 We will need only the rows related to salmon and trout since only these two types of aquacutlure are included in the project
+
 ```{r}
-unique(tillatelser2010_18$PRODUKSJONSFORM)
+unique(tillatelser2010_20$PRODUKSJONSFORM)
 ```
 
 But i can also sort by species, it is simpler
 ```{r}
-unique(tillatelser2010_18$ART)
+unique(tillatelser2010_20$ART)
 ```
 
 ```{r}
-str_view(tillatelser2010_18$ART, pattern = "ørret", match = T)#Regnbueørret
-str_view(tillatelser2010_18$ART, pattern = "Ørret", match = T)#Ørret
+str_view(tillatelser2010_20$ART, pattern = "ørret", match = T)#Regnbueørret
+str_view(tillatelser2010_20$ART, pattern = "Ørret", match = T)#Ørret
 ```
 
 ```{r}
-str_view(tillatelser2010_18$ART, pattern = "Laks", match = T)#Laks
+str_view(tillatelser2010_20$ART, pattern = "Laks", match = T)#Laks
 ```
 
 Filter the rows for salmon and trout.
 NB! The table includes main production farms  but also stamfisk and settesfisk
 
 ```{r}
-mtb_prep <- tillatelser2010_18 |> 
+mtb_prep <- tillatelser2010_20 |> 
   filter(ART %in% c("Laks", "Regnbueørret", "Ørret"))
 ```
 
@@ -218,15 +256,14 @@ convert_mcp_prep1 <-convert_mcp %>%
 
 
 
-
-
-Change to a new number: Roros and Rissa (merged with Indre Fossen)
+Change to a new number: Roros and Rissa (merged with Indre Fossen), Volda has number 1444 in the mtb table but 1519 in the production areas (it merged with other municipalities, 1444 was Horningdal before)
 ```{r}
 mtb_prep4 <- mtb_prep2 |> 
   mutate(municip_number = replace(municip_number, municip_number == "1915", "1903")) |> 
   mutate(municip_number = replace(municip_number, municip_number == "1901", "1903")) |> 
   mutate(municip_number = replace(municip_number, municip_number == "1640", "5025")) |> 
-  mutate(municip_number = replace(municip_number, municip_number == "1624", "5024"))
+  mutate(municip_number = replace(municip_number, municip_number == "1624", "5024")) |> 
+  mutate(municip_number = replace(municip_number, municip_number == "1444", "1519")) 
 ```
 
 
@@ -239,14 +276,23 @@ foo_trond <- mtb_prep4 |>
   select(-municip_number_new)
 ```
 
-Merge Trondelag municipalities with others
+Merge Trondelag municipalities with others.
+Then I also adjust some number of municipalities, where there are only 3 digits, should be 0 in the front
 
 ```{r}
 mtb_prep5 <- mtb_prep4 |> 
   filter(municip_number >= 1800 | municip_number < 1600) 
 
+
+
 mtb_prep6 <- bind_rows(mtb_prep5, foo_trond) |> 
-  left_join(mcp_prod_prep2[,c(
+  mutate(municip_number =
+           ifelse(
+             str_count(municip_number, pattern = regex("[:digit:]")) == 3,
+                       str_c("0",municip_number),
+                       municip_number
+             )) |> 
+ left_join(mcp_prod_prep2[,c(
     "municip_number",
     "municip_name",
     "prod_area_id",
@@ -266,13 +312,14 @@ nonmatches2 <- filter(mtb_prep6, is.na(prod_area_name)) |>
 nonmatches2
 ```
 
-These are inland municipalities that do not have matches in production areas table, not sure why. I will leave these rows without changes
-
+These are ALL inland municipalities of Oppland, Hedmark, Buskerud, Telemark (expames are Viken, Alvdal, Elverum, Folldal, Nord-Aurdal). 
+I just remove those rows.
 
 ```{r}
 mtb_final <- mtb_prep6 |> 
   select(-municip) |> 
   rename(municip = municip_name) |> 
+  filter(!is.na(prod_area_name)) |> 
   select(year, municip_number, municip, everything())
 ```
 
@@ -289,11 +336,11 @@ write.csv(mtb_final, "./data/output/locations_capacity_2010_2018.csv")
 
 The table above can be used to see how many production sites where there each year, but capacity cannot be compared between the areas - sometimes the measurement is tonn, sometines count and m3. I can only keep m3, kg and tonn-units observations, if we want to present the capacity as a comparable numeric variable.
 
-Transform kg to tonn and m3 to tonn. I will only keep MATFISK because, usually, SETTEFISK and STAMFISK location capacities are measured as counts. Also keep only the observations where capacity is measure as tonn, kg or m3.
+Transform kg to tonn and m3 to tonn. I will only keep MATFISK because, usually, SETTEFISK and STAMFISK location capacities are measured as counts. Also keep only the observations where capacity is measured as tonn, kg or m3.
 
 Conversion from m3 to tonns: ant m3 x 0,065 = ant ton
 
-Note that some capacities ara zero, for instance, location 	13189 in 2014.
+Note that some capacities arE zero, for instance, location 	13189 in 2014.
 ```{r}
 mtb_prep7 <- mtb_final |> 
   filter(production_form %in% unique(str_subset(
@@ -318,6 +365,9 @@ How to specify pattern for MATFISK in regex
 # Save the updated table
 
 ```{r}
-write.csv(mtb_prep7, "./data/output/locations_capacity_matfisk_only_2010_2018.csv")
+write.csv(mtb_prep7, "./data/output/locations_capacity_matfisk_only_2010_2018.csv", row.names = FALSE)
 ```
+
+
+
 

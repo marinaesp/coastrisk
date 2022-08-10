@@ -30,7 +30,7 @@ library(here)
 
 # Load the data on lice treatment
 
-The data was downloaded from the BarentsRisk website on 03.11.2021 from
+The data was downloaded from the Barentswatch website on 03.11.2021 from
 https://www.barentswatch.no/nedlasting/fishhealth/treatments?lang=no
 
 

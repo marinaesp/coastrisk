@@ -26,6 +26,7 @@ library(data.table)
 library(vroom)
 library(rebus)
 library(sf)
+library("ggsci")
 ```
 
 
@@ -33,46 +34,38 @@ In this file, I will plot the aquaculture impacts for all the production areas, 
 
 # Load the data
 ```{r}
-lice <-read.csv("./data/output/lice_count_2012_2019.csv")
-totprod <-read.csv("./data/output/annual_aqua_production_sum_per_prodregion.csv")
-mort <-read.csv("./data/output/farmed_fish_mortality_per_mcp_and_prodregion.csv")
-feed <-read.csv("./data/output/feed_consumption_per_mcp_and_prodregion.csv")
-escaped <-read.csv("./data/output/escaped_fish_per_mcp_and_prodregion.csv")
-mtb <-read.csv("./data/output/locations_capacity_2010_2018.csv")
+lice <-read.csv("./data/output/lice_count_2012_2020.csv")
+totprod <-read.csv("./data/output/annual_aqua_production_per_prodregion.csv")
+mtb <-read.csv("./data/output/locations_capacity_matfisk_only_2010_2018.csv")
 nutri <-read.csv("./data/output/n_p_runoff_per_vassdragsomr_version2.csv")
+feed_mort <-read.csv("./data/output/feed_mortality_escapees_per_prodarea.csv")
+escapees <- read.csv("./data/output/escapees_risk_per_prodarea.csv")
+disease <- read.csv("./data/output/ila_pd_disease_occasions_per_prodarea.csv")
+licetreat <- read.csv("./data/output/lice_treatments_per_prodarea.csv")
+momb <- read.csv("./data/output/momb_per_prodarea.csv")
+
+
 ```
 
 # Prepare all the indices data
 
-In most cases, i will have to take a sum of an index variable over all production areas. For example, mortality, total yield and feed consumption are per municipality, so i will sum them up to production region.
+## Feed and mortality table
 
-## Indices based on on total produciton statistics
-
-The main table - total aquaculture yield per year. I will join other tables to this table.
+THe tables are ready and are aggregated per production area. I just need to remove the row numbers and the escapees count
 
 ```{r}
-feed_prep <- feed |> 
-  group_by(year, prod_area_name, prod_area_id) |> 
-  summarize(feed_total = sum(feed_consumption_kg))
+feed_mort_prep <- feed_mort |> 
+  select(-c(X, escapees_count)) 
+  
 ```
 
 
-```{r}
-mort_prep <- mort |> 
-  group_by(year, prod_area_name, prod_area_id) |> 
-  summarize(mortality_total = sum(died_fish_count))
-```
-```{r}
-escaped_prep <- escaped |> 
-  group_by(year, prod_area_name, prod_area_id) |> 
-  summarize(escaped_total = sum(escaped_fish_count))
-```
 ## Lice counts
 
 I will take a sum of average adult lice count per fish, because it is adult lice that releases larvae that later infest other fish.
-First, i will take only the maximal value of adult lice observed over all week - we can consider that as a strongest possible impact. Then i take average over the production region (taking sum would be wrong, i think).
+First, i will take only the maximal value of adult lice observed over all weeks - we can consider that as a strongest possible impact. Then i take average over the production region (taking sum would be wrong, i think).
 
-NB! Not every location reported lice every week each year, sometimes there is data for only a few weeks over a year (might be there was not fish most of the month in that year). So, different location will contribute to average maximal lice over the production region.
+NB! Not every location reported lice every week each year, sometimes there is data for only a few weeks over a year (might be there was no fish most of the month in that year). So, different locations will contribute to average maximal lice over the production region.
 
 ```{r}
 lice_prep <- lice |> 
@@ -86,15 +79,16 @@ lice_prep <- lice |>
 
 For nutrients, i remove rows where production area is NA.
 Then i calculate total runoff per production area as sum of runoff per vassdrag multiplied by proportion of that vassdrag to total area 
-of all vassdrags in a production region, and multiplied by the number of vassdrags in a production region
+of all vassdrags in a production region, and multiplied by the number of vassdrags in a production region. This is like a weighted sum of nutrients runoff of all vassdrags that are in a production area.
 
 $nutrients_{total} = \sum_{i=1}^{N}(w_i*nutrients_i )$
 
 
-First, i need to take total amount of runoff per vassdragsomrade
+First, i need to take total amount of runoff per vassdragsomrade, this is locally originated runoff, i do not consider upstream sources of N and P.
 
 ```{r}
 nutri_prep <- nutri |> 
+  select(-X) |> 
   filter(!is.na(prod_area_name)) |> 
   group_by(year,vassdragsomrade,vassdragsomrade_name, vass_area_prop,prod_area_id, prod_area_name) |> 
   summarize(local_aqu_tot_p_tonnes_vass = sum(local_aqu_tot_p_tonnes),
@@ -109,12 +103,19 @@ nutri_prep <- nutri |>
 
 ## MTB of locations
 
-I will assume that different units, like m3 and tons mean the same - volume of water in the cages.
-I will select only MATFISK, otherwise also count of smolts in SETTEFISJ ANLEGG will be included.
-Then i take a sum of all tons licensed over the whole production area. I need to ask FISKEDIR which converstion coefficients they use to convert m3 to ton of fish, not sure what's density of salmonid should be used.
+
+
+This table has only data for salmon and trout and only on MATFISK because, usually, SETTEFISK and STAMFISK location capacities are measured as counts. Also there are  only the observations where capacity is measured as tonn, kg or m3, because we cannot compare counts and volumes.
+
+Note the data is not yet aggregated per production region, it is per farming location (but aggregation can be done easily).
+So i just aggregate the MTB data per production region
+
+
+
 ```{r}
 mtb_prep <- mtb |> 
-  filter(production_form == "MATFISK") |> 
+ group_by(year,prod_area_id, prod_area_name) |> 
+  summarise(mtb_total_tonn = sum(location_capacity_tonn))
 ```
 
 
@@ -122,50 +123,113 @@ mtb_prep <- mtb |>
 
 ## MOMB
 
-Base the momb indikator on the % of locations with momb=3 or 4, over the production area
+The momb indicator  is based on on the % of locations with momb=3 or 4, over the production area. However, number of locations that reported momb is very different from one area to another, but we will later standardize the  momb indicator so it will be comparable to other indicators.
+```{r}
+momb_prep <- momb |> 
+  group_by(year, prod_area_id, prod_area_name) |> 
+  summarize(momb_3_4 = sum(momb_status %in% c(3,4)),
+             momb_total = n()) |> 
+  mutate(prop_momb_3_4 = momb_3_4/momb_total*100)
+```
+
+
 
 ## Diseaes
 
+The diseases dataset is ready, i just filter out the year 2021 and divide the table into 2: ILA disease and PD disease, that will be easier to plot.
 
+The disease occasions is the number of events when a particular disease was confirmed, the first day it happened (disease not just suspected but confirmed!).
 
-???? Should i take the sum of all outbreaks of any (important) diseases over a year per production region? Ask Mette
+The data is already aggregated per production area.
+
+```{r}
+disease_prep <- disease |> 
+  filter(!year == 2021)
+
+disease_ila <- disease_prep |> 
+  filter(disease == "ILA") |> 
+   rename(ila_occasions = disease_occasions)
+
+disease_pd <- disease_prep |> 
+  filter(disease == "PD") |> 
+  rename(pd_occasions = disease_occasions)
+```
 
 
 ## Salmon lice treatment events
 
+Similar to disease dataset, I will divide lice treatments dataset into 2: one for the number of bath treatments, and another - for feed treatment.
+The data is already aggregated per production area. I also remove year 2021, we don't have data 2021 data for most of the other indices
+
+```{r}
+licetreat_prep <- licetreat |> 
+  filter(!year == 2021)
+
+licetreat_bath <- licetreat_prep |> 
+  filter(treatment_type == "Bath") |> 
+  rename(sum_treat_bath = sum_treaments)
+
+licetreat_feed <- licetreat_prep |> 
+  filter(treatment_type == "Feed") |> 
+ rename(sum_treat_feed = sum_treaments)
+```
 
 ## Risks related to escaped salmon in rivers
 
+Escapees table is essentially ready, i will just add a vector of colors corresponding to risks 
+
+```{r}
+escapees_prep <- escapees |> 
+  mutate(color = case_when(
+    escapees_risk == 1 ~ "green",
+    escapees_risk == 2 ~ "yellow",
+    TRUE ~ "red"
+  )) |> 
+  mutate(year = 2020)
+```
 
 
 ## Final table
 
 Transpose the table into a long format, where all indices are under variable "impact"
-#Join tables and standardize the continuous covariates
 
-?? Check why there is no aqua production in Ost-Finnmark in 2012, was produciton negative and i replaced it with NA?
+Join tables and standardize the continuous covariates
+
+?? Check why there is no aqua production in Ost-Finnmark in 2012, was production negative and i replaced it with NA? Yes, becasuse the two municipalities that produced farmed fish that year in Ost-Finnmark (Nesseby and Sor-Varanger), both had negative produciton, which i replaced with NA
 
 ```{r}
 final <- totprod |> 
-  left_join(feed_prep[,c(1,3,4)], by = c("year", "prod_area_id")) |> 
-  left_join(mort_prep[,c(1,3,4)], by = c("year", "prod_area_id"))  |> 
+  left_join(feed_mort_prep[,c(1,2,4,5)], by = c("year", "prod_area_id")) |> 
   left_join(lice_prep[,c(1,2,4)], by = c("year", "prod_area_id")) |> 
-  left_join(escaped_prep[,c(1,3,4)], by = c("year", "prod_area_id")) |> 
-  left_join(nutri_prep[,c(1,2,4,5)], by = c("year", "prod_area_id")) 
+  left_join(escapees_prep[,c(1,3,4,5)], by = c("year", "prod_area_id")) |> 
+  left_join(nutri_prep[,c(1,2,4,5)], by = c("year", "prod_area_id")) |> 
+  left_join(mtb_prep[,c(1,2,4)], by = c("year", "prod_area_id")) |> 
+  left_join(licetreat_feed[,c(1,3,5)], by = c("year", "prod_area_id")) |> 
+  left_join(licetreat_bath[,c(1,3,5)], by = c("year", "prod_area_id")) |> 
+  left_join(disease_ila[,c(1,2,5)], by = c("year", "prod_area_id")) |> 
+  left_join(disease_pd[,c(1,2,5)], by = c("year", "prod_area_id"))
 ```
 
+There are missing values for several variables, this is because some datasets (like lice, MTB, diseases, and lice treatments) do not have data for 2005-2010. MTB data is also not available for 2016.
 
+For diseases and lice treatments also, sometimes, there are no records in a particular year and production area. I think it is not a missing data it is just no disease events or no lice treatments took place.
 ```{r}
 MyStd <- function(x) { (x - mean(x, na.rm=T)) / sd(x, na.rm=T)}
 
 final_prep <-final |> 
-  mutate_at(vars(c("production_per_region", 
-                   "feed_total", 
-                   "mortality_total",
+  rename(production_kg = production_per_region) |> 
+  mutate_at(vars(c("production_kg", 
+                   "feed_used_kg", 
+                   "deadfish_count",
                    "mean_lice_prodarea",
-                   "escaped_total",
                    "local_aqu_tot_n_tonnes",
-                   "local_aqu_tot_p_tonnes")), ~MyStd(.))
+                   "local_aqu_tot_p_tonnes",
+                   "mtb_total_tonn",
+                   "sum_treat_feed",
+                   "sum_treat_bath",
+                   "ila_occasions",
+                   "pd_occasions"
+                   )), ~MyStd(.))
 
 ```
 
@@ -175,15 +239,39 @@ final_prep <-final |>
 Transpose the table to long format
 ```{r}
 final_prep2 <- final_prep |> 
-  pivot_longer(cols = c("production_per_region", 
-                   "feed_total", 
-                   "mortality_total",
+  select(-color) |> 
+  pivot_longer(cols = c(
+                  "production_kg", 
+                   "feed_used_kg", 
+                   "deadfish_count",
                    "mean_lice_prodarea",
-                   "escaped_total",
+                   "escapees_risk",
                    "local_aqu_tot_n_tonnes",
-                   "local_aqu_tot_p_tonnes"),
+                   "local_aqu_tot_p_tonnes",
+                  "mtb_total_tonn",
+                  "sum_treat_feed",
+                  "sum_treat_bath",
+                  "ila_occasions",
+                  "pd_occasions"
+                  ),
                  names_to = "variable",
-                 values_to = "value")
+                 values_to = "value") |> 
+   mutate(variable = factor(variable, levels=c(
+                    "production_kg", 
+                   "feed_used_kg", 
+                   "deadfish_count",
+                   "mean_lice_prodarea",
+                   "escapees_risk",
+                   "local_aqu_tot_n_tonnes",
+                   "local_aqu_tot_p_tonnes",
+                  "mtb_total_tonn",
+                  "sum_treat_feed",
+                  "sum_treat_bath",
+                  "ila_occasions",
+                  "pd_occasions"))) |> 
+  mutate(prod_area_name2 = str_c(prod_area_id, prod_area_name, sep = ": "))
+
+
 ```
 
 
@@ -195,34 +283,34 @@ theme_akva <- function(...) {
   theme_hc() +
     theme(
       axis.text.x = element_text(
-        size = 10, angle = 90, hjust = 1, vjust = 0.5,
+        size = 11, angle = 90, hjust = 1, vjust = 0.5,
         face = "italic", color = "grey51"
       ),
-      axis.text.y = element_text(size = 10, angle = 0, face = "italic", color = "grey51"),
+      axis.text.y = element_text(size = 11, angle = 0, face = "italic", color = "grey51"),
       axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0), face = "italic", size = 12, color = "grey22"),
       plot.title = element_text(hjust = 0.5, vjust = 0.5),
       axis.ticks.x = element_line(size = 0.2),
       axis.ticks.length = unit(0.1, "cm"),
       #axis.line.x = element_line(size = 0.3, color = "black"),
-      strip.text = element_text(size = 11, face = "italic", color = "grey22"),
+      strip.text = element_text(size = 12, face = "italic", color = "grey22"),
       strip.background = element_rect(fill = "white", color ="white"),
       panel.background = element_rect(fill = "white"),
       plot.background = element_rect(fill = "white"),
       panel.grid.major.y = element_line(color = "grey", size = 0.2),
       panel.grid.major.x = element_line(color = "grey", size = 0.2),
+      legend.text = element_text(size = 12),
       legend.title = element_blank()
-     
     )
 }
 ```
 
 
 ```{r}
-breaks1 <- seq(2000, 2020, by = 1)
+breaks1 <- seq(2000, 2022, by = 1)
 labels1 <- as.character(breaks1)
 labels1[!breaks1 %% 2 == 0] <- ""
 
-breaks2 <-seq(-2, 8, by = 2)
+breaks2 <-seq(-2, 4, by = 2)
 # labels2 <- imap_chr(breaks2, function(., id){
 #   return(paste0(formatC(breaks2[id], format="f", big.mark="," , digits = 0),
 #                              ""))
@@ -231,22 +319,32 @@ breaks2 <-seq(-2, 8, by = 2)
 
 
 ```{r}
+library(ggsci)
+```
+
+```{r}
 plot1 <-ggplot(
   data = final_prep2,
   mapping = aes(x = year,
                 y = value)
 ) +
-  geom_line(mapping = aes(color = variable),  size = 1.1, alpha = 0.7) +
-  geom_point(mapping = aes(color = variable),  size = 0.7, alpha = 0.7) +
-  scale_color_brewer(palette = "Set1",
-                     labels = c("Escaped fish",
+  geom_line(mapping = aes(color = variable),  size = 0.7, alpha = 0.9) +
+  geom_point(mapping = aes(color = variable),  size = 2, alpha = 0.6) +
+  scale_color_ucscgb(
+                     labels = c("Production",
                                 "Feed",
-                                "Local N",
-                                "Local P",
-                                "Adult lice",
                                 "Mortality",
-                                "Production")) +
-  facet_wrap(fct_reorder(prod_area_name, 
+                                "Adult lice",
+                                "Escapees risk",
+                                "Local N",
+                                 "Local P",
+                                "Production capacity",
+                                "Feed treatment of lice",
+                                "Bath treatment of lice",
+                                "ILA occasions",
+                                "PD occasions"
+                                )) +
+  facet_wrap(fct_reorder(prod_area_name2, 
                          prod_area_id,
                          min) ~ .) +
   scale_x_continuous(limits = c(2000, 2020), breaks = breaks1, labels = labels1) +
@@ -258,6 +356,201 @@ plot1 <-ggplot(
 plot1
 
 ```
+
+
 ```{r}
 ggsave("figs/aqua_impacts_per_prodregion.pdf", plot = plot1, width = 12, height =  10, dpi = 300)
 ```
+
+
+
+
+Another version with a colored strips to show the escapees risk
+
+```{r}
+library(ggh4x) # devtools::install_github("teunbrand/ggh4x")
+
+final_prep3 <- final_prep2 |>
+  filter(!variable == "escapees_risk")  |>
+  left_join(escapees_prep[,c(1,3,4,5)], by = c("year", "prod_area_id"))
+```
+
+```{r}
+
+plot2 <-ggplot(
+  data = final_prep3,
+  mapping = aes(x = year,
+                y = value,
+                group = variable)
+) +
+  geom_line(mapping = aes(color = variable,  size=variable), alpha = 0.6) +
+  geom_point(mapping = aes(color = variable),  size = 0.9, alpha = 0.8) +
+  scale_linetype_manual(values = c(rep("solid",4), rep("dotted", 4), rep("dashed", 3))) + 
+  scale_size_manual(values = c(rep(1.5,4), rep(2,3), rep(2.5, 4))) +
+  guides(linetype = FALSE, size = FALSE) +
+  scale_color_ucscgb(
+                     labels = c("Production",
+                                "Feed",
+                                "Mortality",
+                                "Adult lice",
+                                "Local N",
+                                 "Local P",
+                                "Production capacity",
+                                "Feed treatment of lice",
+                                "Bath treatment of lice",
+                                "ILA occasions",
+                                "PD occasions"
+                                )) +
+  facet_wrap(fct_reorder(prod_area_name2,
+                         prod_area_id,
+                         min) ~ .) +
+      facet_wrap2(fct_reorder(prod_area_name2,
+                         prod_area_id,
+                         min) ~ .,
+                   #cols = vars(prod_area_id),
+      strip = strip_themed(
+      background_x = list(element_rect(fill = "darkolivegreen1"),
+                          element_rect(fill = "darkolivegreen1"),
+                          element_rect(fill = "indianred1"),
+                          element_rect(fill = "indianred1"),
+                          element_rect(fill = "darkgoldenrod1"),
+                          element_rect(fill = "darkgoldenrod1"),
+                          element_rect(fill = "indianred1"),
+                          element_rect(fill = "indianred1"),
+                          element_rect(fill = "indianred1"),
+                          element_rect(fill = "indianred1"),
+                          element_rect(fill = "indianred1"),
+                          element_rect(fill = "darkgoldenrod1"),
+                          element_rect(fill = "darkolivegreen1")),
+      text_x = list(element_text(color = "black"))
+      ) 
+      ) +
+  scale_x_continuous(limits = c(2000, 2020), breaks = breaks1, labels = labels1) +
+  scale_y_continuous(breaks = breaks2) +
+  labs(y = "Standradized aquaculture impacts", x = "") +
+  geom_hline(yintercept = 0, color = "black", size = 0.3) +
+  theme_akva() +
+  guides(color = guide_legend(override.aes = list(size = 2)))
+
+
+# escapees_plot <- final_prep3 |> 
+#   filter(year == 2020)
+
+
+#This solution did not work!
+# plot2.2 <- plot2 +
+#     geom_point(data = escapees_prep,
+#       mapping = aes(x = year, y = escapees_risk), 
+#       color = c("darkgreen", "darkgreen" , "darkred" ,   
+#                 "darkred" ,   "yellow" ,"yellow" ,"darkred" ,  
+#                 "darkred",    "darkred" , "darkred" ,   "darkred" , 
+#                 "yellow", "darkgreen" ), 
+#       size = 2.5, alpha = 0.5)  +
+#     scale_color_manual("Risk",
+#                        values = cols,
+#                        guide = guide_legend(override.aes = list(fill = NA)))
+
+
+
+```
+
+
+
+## Adjusting the palette and remove NAs
+
+
+```{r}
+
+final_prep4 <- final_prep3 |> 
+  filter(!is.na(value))
+
+getPalette = colorRampPalette(brewer.pal(8, "Accent"))
+
+plot3 <-ggplot(
+  data = final_prep4,
+  mapping = aes(x = year,
+                y = value,
+                group = variable)
+) +
+  geom_point(mapping = aes(color = variable),  size = 0.9, alpha = 0.8) +
+  geom_line(mapping = aes(color = variable,  size=variable), alpha = 0.6) +
+  scale_linetype_manual(values = c(rep("solid",4), rep("dotted", 4), rep("dashed", 3))) + 
+  scale_size_manual(values = c(rep(1,4), rep(1.4,3), rep(1.8, 4))) +
+  guides(linetype = FALSE, size = FALSE) +
+  scale_color_manual(values = getPalette(12),
+                     labels = c("Production",
+                                "Feed",
+                                "Mortality",
+                                "Adult lice",
+                                "Local N",
+                                 "Local P",
+                                "Production capacity",
+                                "Feed treatment of lice",
+                                "Bath treatment of lice",
+                                "ILA occasions",
+                                "PD occasions"
+                                )) +
+  facet_wrap(fct_reorder(prod_area_name2,
+                         prod_area_id,
+                         min) ~ .) +
+      facet_wrap2( fct_reorder(prod_area_name2,
+                         prod_area_id,
+                         min) ~ .,
+                   #cols = vars(prod_area_id),
+      strip = strip_themed(
+      background_x = list(element_rect(fill = "darkolivegreen1"),
+                          element_rect(fill = "darkolivegreen1"),
+                          element_rect(fill = "indianred1"),
+                          element_rect(fill = "indianred1"),
+                          element_rect(fill = "darkgoldenrod1"),
+                          element_rect(fill = "darkgoldenrod1"),
+                          element_rect(fill = "indianred1"),
+                          element_rect(fill = "indianred1"),
+                          element_rect(fill = "indianred1"),
+                          element_rect(fill = "indianred1"),
+                          element_rect(fill = "indianred1"),
+                          element_rect(fill = "darkgoldenrod1"),
+                          element_rect(fill = "darkolivegreen1")),
+      text_x = list(element_text(color = "black"))
+      ) 
+      ) +
+  scale_x_continuous(limits = c(2000, 2020), breaks = breaks1, labels = labels1) +
+  scale_y_continuous(breaks = breaks2) +
+  labs(y = "Standradized aquaculture impacts", x = "") +
+  geom_hline(yintercept = 0, color = "black", size = 0.3) +
+  theme_akva() +
+  guides(color = guide_legend(override.aes = list(size = 2)))
+```
+
+
+```{r}
+ggsave("figs/aqua_impacts_per_prodregion.pdf", plot = plot1, width = 12, height =  10, dpi = 300)
+```
+
+
+```{r}
+ggsave("figs/aqua_impacts_per_prodregion_colored_strips.pdf", plot = plot2, width = 12, height =  10, dpi = 300)
+```
+
+```{r}
+ggsave("figs/aqua_impacts_per_prodregion_colored_strips.pdf", plot = plot3, width = 12, height =  10, dpi = 300)
+```
+
+
+
+##############
+# Kotaro's exmaple of ggplot
+```{r}
+pp2 <- ggplot(Annual_area_gear_vessel %>% filter(Redskap_group %in% c("trawl_bottom", "trawl_pelagic", "seine", "gillnet", "danish_seine", "hook_and_line")) %>%
+                  filter(Area != c("NA: NA"), !is.na(Area)), aes(x=Year, y=sum_std, col=Redskap_group)) +
+                  geom_line(size=1.5, aes(linetype = Length_group)) +
+      facet_wrap(~Area, scales="free_y") + theme_bw() + scale_color_viridis_d(name = "Gear group") +
+      ylab("Standardized landings") +
+      scale_linetype(name = "Vessel size group") +
+      theme(title = element_text(size=15),
+      strip.text = element_text(size = 13),
+      axis.text = element_text(size = 12),
+      legend.text = element_text(size = 13),
+      legend.position = "bottom")
+```
+

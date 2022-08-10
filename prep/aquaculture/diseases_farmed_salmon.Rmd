@@ -139,7 +139,9 @@ I can add information on how many registered locations are there in a production
 Load the table on MTB, there i have the information on locations. However, I will select only the locations that produced MATFISK, not SETTEFISK or STAMFISK, because diseases ILA and PD are registered at these locations (these disease affect  growing fish, not the smolts)
 
 
-10.11.2021- not sure that standardization like this is really correct. Why? Because i cannot guarantee, that the locations recoreded in the diseases datasets match exactly the locations that are in the MTB dataset. For instace, MTB dataset includes MATFISK production in the freshwater and breckish waters. Does disease dataset include this locations or not? In other words, it would be easy to make a mistake by dividing diseases occasions by the total number of locations from MTB datset, while some of the locations are not among those that can develop a disease.
+10.11.2021- not sure that standardization like this is really correct. Why? Because i cannot guarantee, that the locations recorded in the diseases datasets match exactly the locations that are in the MTB dataset. For instace, MTB dataset includes MATFISK production in the freshwater and brackish waters. Does disease dataset include this locations or not? In other words, it would be easy to make a mistake by dividing diseases occasions by the total number of locations from MTB datset, while some of the locations are not among those that can develop a disease.
+
+Also, i have no information on which species the production sites have in the disease dataset. Is that only salmon and trout or all possible species? My mtb data only have salmon and trout species, so i cannot analyse together only salmon and trout-based data and many other species-including data.
 
 I will ask Barentswatch which locations are included in the disease dataset, but for now I will not standardize the disease table.
 

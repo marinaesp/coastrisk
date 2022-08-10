@@ -21,7 +21,7 @@ knitr::opts_chunk$set(echo = TRUE, message=FALSE)
 source('~/github/coastrisk/src/common.r')
 ```
 
-```{r additional libraries, inlcude = FALSE}
+```{r additional libraries, inlcude = FALSE, message=FALSE}
 library(data.table)
 library(vroom)
 library(rebus)
@@ -29,16 +29,24 @@ library(here)
 ```
 
 ```{r}
-lus <- read.csv("./data/lakselus_per_fisk_raw.csv", header = TRUE)  
+lus <- read.csv("./data/raw/lakselus_per_fisk_raw.csv", header = TRUE)  
 lus_2005 <-read.csv("~/github/nor-data/aquaculture/lice_vers2_2005_2011_formatted.csv", sep = ",")
+lus_2020 <-read.csv("./data/raw/lakselus_per_fisk_2020.csv", header = TRUE) 
 ```
 
+Merge lice data 2012-2019 and lice data 2020
+```{r}
+lus_2020_prep <-lus_2020 |> 
+  rename(Brakklagt = Trolig.uten.fisk)
+```
 
-
+```{r}
+lus_prep <- bind_rows(lus, lus_2020_prep)
+```
 
 # Preliminary data cleaning for 2012-2019 
 ```{r}
-colnames(lus) <- c(
+colnames(lus_prep) <- c(
   "week", "year", "location_number", "location_name",
   "adult_lice", "moving_lice", "sitting_lice", "brakklagt_location", "counted_lice",
   "municip_number", "municip", "county_number", "county",
@@ -46,7 +54,7 @@ colnames(lus) <- c(
   "prod_area_id", "prod_area_name"
 )
 
-lus_prep <- lus %>%
+lus_prep2 <- lus_prep %>%
   mutate(municip_number = replace(municip_number, location_number == "10893", "1835")) %>%
   mutate(municip_number = replace(municip_number, location_number == "11087", "1836")) %>%
   mutate(municip_number = replace(municip_number, location_number == "1915", "1903")) %>%
@@ -61,7 +69,7 @@ lus_prep <- lus %>%
 
 ```{r}
 #filter out rows where lice threshold is unknown
-lus_prep2 <-lus_prep %>% 
+lus_prep3 <-lus_prep2 %>% 
   filter(above_lice_threshold != "Ukjent") 
 ```
 
@@ -71,7 +79,7 @@ lus_prep2 <-lus_prep %>%
 Select only locations that were counting lice. 
 
 ```{r}
-lus_prep3 <- lus_prep2 %>%
+lus_prep4 <- lus_prep3 %>%
   filter(counted_lice == "Ja")  |> 
   mutate(
     prod_area_name = str_replace_all(
@@ -83,7 +91,7 @@ lus_prep3 <- lus_prep2 %>%
 
 Save the final table
 ```{r}
-write.csv(lus_prep3, "./data/output/lice_count_2012_2019.csv")
+write.csv(lus_prep4, "./data/output/lice_count_2012_2020.csv")
 ```
 
 

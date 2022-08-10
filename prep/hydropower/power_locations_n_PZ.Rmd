@@ -1,0 +1,125 @@
+---
+title: "Plotting hydropower plants locations and aquaculture PZ"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: haddock
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r}
+library(sf)
+library(mapdata)
+library(maptools)
+library(rgdal)
+library(rgeos)
+library(maps)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(stringr)
+library(stars)
+```
+
+# Loading data
+
+```{r}
+testfile <- "/Users/marinaespinasse/Downloads/Export.tif"
+test <- read_stars(testfile)
+test_sf <- st_as_sf(test, as_points = TRUE)
+```
+
+
+A tutorial about reading raster objects and transforming then to sf:
+
+https://r-spatial.github.io/stars/articles/stars5.html#vectorizing-a-raster-object-to-an-sf-object
+
+
+An example of intersescting points and polygons using sf
+
+https://gis.stackexchange.com/questions/386503/intersect-points-and-polygons
+
+
+## Shapefiles of the production areas
+
+The shapefiles are loaded from coastrisk ftp, check the path!
+```{r}
+prod_areas <- readOGR(dsn = "/Volumes/ftp.imr.no/ProductionAreas/OGRgeoJSON_prodomr")
+
+prodareas_sf <- st_as_sf(prod_areas, coords= c("long", "lat"), agr="identity")
+
+sf_use_s2(FALSE)
+```
+
+
+# Calculate intersections and area of intersection between prodareas and hydropowers
+
+To reduce running time, I filter out only production areas 3,4,9, and 12.
+
+```{r}
+prodareas_sf_sel <- prodareas_sf |> 
+  filter(id %in% c(3,4,9,12))
+```
+
+
+Change the geographical projections of hydropower
+
+
+```{r}
+test_sf_trans = st_transform(test_sf, crs = st_crs(prodareas_sf))
+```
+
+```{r}
+intersect <- lengths(st_intersects(prodareas_sf_sel, test_sf_trans))
+lengths(intersect)
+```
+
+# Define the number of stations per PZ
+
+There is already data prepared by Mette on each hydropower station existing per PZ. But these are not aggregated yet, i can do that now.
+So, i want to have a short table on the total number of hydropower plants per PZ.
+
+```{r}
+hwp <- read_csv(".data/raw/Vannkraftverk_PZ.csv")
+```
+
+Cleaning the power plants data
+```{r}
+hwp_prep <- hwp |> 
+  janitor::clean_names() |> 
+  select(navn,type,kommunenr,
+         maks_ytelse_mw,
+         midl_arsproduksjon_ref_1981_2010_g_wh,
+         brutto_fallhoyde_m,
+         maksimal_slukeevne_m3_s,
+         year_start,
+         pz)
+```
+
+How many hydropower installations are there per PZ? I sum all: kraftverk, pumpe, and pumpekraftverk.
+
+```{r}
+hwp_per_pz <- hwp_prep |> 
+  group_by(type, pz) |> 
+  summarise(total = n()) |> 
+  rename(prod_area_id = pz,
+         type_of_location = type,
+         total_stations = total)
+```
+
+```{r}
+write_csv(hwp_per_pz, "./data/output/hydropower_stations_per_prodarea.csv")
+```
+

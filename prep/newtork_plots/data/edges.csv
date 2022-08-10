@@ -1,0 +1,93 @@
+﻿from,to
+origin,Sector
+origin,Pressure
+origin,Ecosystem component
+Sector,Aquaculture
+Sector,Fisheries
+Sector,Hydropower
+Sector,Mining
+Sector,Recreational fisheries
+Sector,Shipping and transportation
+Sector,Oil and gaz
+Sector,Windfarms
+Sector,Human population and tourism
+Sector,Military activities
+Pressure,Species extraction
+Pressure,Abrasion
+Pressure,Biochecmical habitat change
+Pressure,Slitation
+Pressure,Bycatch
+Pressure,Litter
+Pressure,Ghost fishing
+Pressure,Species extraction
+Pressure,Bycatch
+Pressure,Ghost fishing
+Pressure,Parasites
+Pressure,Genetic introgression
+Pressure,Diseases
+Pressure,Pollution
+Pressure,Physiological impact
+Pressure,Species extraction
+Pressure,Noise
+Pressure,Pollution
+Pressure,Pollution
+Pressure,Abrasion
+Pressure,Litter
+Pressure,Litter
+Pressure,Litter
+Pressure,Litter
+Pressure,Organic matter
+Pressure,Organic matter
+Pressure,Non-indigenous species
+Pressure,Non-indigenous species
+Pressure,Acidification
+Pressure,Incidental loss
+Pressure,Shoreline erosion
+Pressure,Shoreline erosion
+Pressure,Shoreline erosion
+Pressure,Shoreline erosion
+Pressure,Light pollution
+Pressure,Light pollution
+Pressure,Light pollution
+Pressure,Slitation
+Pressure,Slitation
+Pressure,Slitation
+Pressure,Slitation
+Pressure,Slitation
+Pressure,Slitation
+Pressure,Slitation
+Pressure,Slitation
+Pressure,Deposition
+Pressure,Sealing
+Pressure,Sealing
+Pressure,Pollution
+Pressure,Pollution
+Pressure,Incidental loss
+Pressure,Salinity change
+Pressure,Salinity change
+Pressure,Temperature change
+Pressure,Temperature change
+Pressure,Temperature change
+Pressure,Currents and circualtion
+Pressure,Currents and circualtion
+Pressure,Nutrients
+Ecosystem component,Benthic communities
+Ecosystem component,Cleaner fish
+Ecosystem component,Coral reefs
+Ecosystem component,Crustaceans
+Ecosystem component,Demersal fish
+Ecosystem component,Fish
+Ecosystem component,Fish juveniles
+Ecosystem component,Kelp
+Ecosystem component,Lumpfish
+Ecosystem component,Macroalgae
+Ecosystem component,Marine mammals
+Ecosystem component,Oyster reefs
+Ecosystem component,Pelagic fish
+Ecosystem component,Phytoplankton
+Ecosystem component,Seabirds
+Ecosystem component,Seagrass
+Ecosystem component,Shrimp
+Ecosystem component,Wild salmonids
+Ecosystem component,Wrasse
+Ecosystem component,Zooplankton
