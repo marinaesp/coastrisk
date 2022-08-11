@@ -1,0 +1,238 @@
+---
+title: "Plots for the waste water treatment sector"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: haddock
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r}
+library(sf)
+library(mapdata)
+library(maptools)
+library(rgdal)
+library(rgeos)
+library(maps)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(stringr)
+```
+
+# Load the data on waste water treatment and produciton areas polygons
+
+```{r}
+stations <- read_csv("./data/output/water_treatment_stations_per_prodarea.csv")
+```
+
+
+```{r}
+prod_areas <- readOGR(dsn = "/Volumes/ftp.imr.no/ProductionAreas/OGRgeoJSON_prodomr")
+
+```
+
+```{r}
+prodareas_sf <- st_as_sf(prod_areas, coords= c("long", "lat"), agr="identity")
+```
+
+
+Below is just a small correciton not to use circular geometry, just a trick to avoid errors (I took this advice from sf github discussion)
+```{r}
+sf_use_s2(FALSE)
+```
+
+
+# Plotting
+
+Now I need to add waste water data to the spatial object of production area polygons. We cannot plot all years at the same time (we can but would be difficult to discern the number, can plot this for supplementary). 
+
+```{r}
+stations_2019 <- filter(stations, year == "2019")
+prodareas_sf$waste_stations19 <- stations_2019$number_of_stations_pa
+prodareas_sf$prod_area_name <- stations_2019$prod_area_name2
+prodareas_sf$prod_area_id <- stations_2019$prod_area_id
+```
+
+```{r}
+prodareas_names <- cbind(prodareas_sf, st_coordinates(st_centroid(prodareas_sf)))
+```
+
+
+```{r}
+world <- ne_countries(scale = "medium", returnclass = "sf")
+```
+
+Did not use the chunk below, just an option of a palette
+```{r}
+# addalpha <- function(colors, alpha=0.8) {
+#   r <- col2rgb(colors, alpha=T)
+#   # Apply alpha
+#   r[4,] <- alpha*255
+#   r <- r/255.0
+#   return(rgb(r[1,], r[2,], r[3,], r[4,]))
+# }
+# 
+# cols_blue <- addalpha(brewer.pal(6, "GnBu"))
+```
+
+
+```{r}
+library(ggsci)
+```
+
+
+```{r}
+plot1 <- ggplot() +
+   geom_sf(
+   data = world, 
+   fill = "antiquewhite1", 
+   color = "dimgray", 
+   size = 0.3) +
+  theme(axis.text.x = element_text(size = 12,  color = "grey45"),
+        axis.text.y = element_text(size = 12,  color = "grey45"),
+        axis.title = element_text(size = 12,  color = "grey9"),
+        axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
+        legend.text = element_text(size = 12, color = "grey45"),
+        legend.title = element_text(size = 12,  face = "bold"),
+        panel.background = element_rect(fill = "aliceblue") ,
+        panel.grid.major = element_line(color = "#dbdbd9", linetype = "dashed", size = 0.2),
+        plot.title = element_text(hjust = 0.5, vjust = 0.5, size = 17, face = "bold")
+  ) +
+  scale_x_continuous(breaks = c(0,5,10,15,20, 25,30)) +
+  geom_sf(
+    mapping = aes(fill = waste_stations19),
+    data = prodareas_sf,
+    color = "grey68",
+    size = 0.5
+  ) +
+  coord_sf(xlim = c(2, 34), ylim = c(55, 72), expand = FALSE) +
+  labs(x = "Longitude", y = "Latitude") + 
+  scale_fill_material("teal",  name = "Waste water stations in 2019", alpha = 0.8) +
+  geom_sf_text(data = prodareas_names, aes(X,Y, label = prod_area_id),fontface = "bold", size = 5) 
+  
+```
+
+
+## A line grapth
+
+I reuse aquaculture theme to make plots in the paper more alike
+
+```{r}
+theme_akva <- function(...) {
+  theme_hc() +
+    theme(
+      axis.text.x = element_text(
+        size = 12, angle = 90, hjust = 1, vjust = 0.5,
+        face = "italic", color = "grey20"
+      ),
+      axis.text.y = element_text(size = 12, angle = 0, face = "italic", color = "grey20"),
+      axis.title.x =  element_text(margin = margin(t = 15, r = 0, b = 0, l = 0), size = 12, angle = 0, face = "italic", color = "grey20"),
+      axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0), face = "italic", size = 12, color = "grey22"),
+      plot.title = element_text(hjust = 0.5, vjust = 0.5),
+      axis.ticks.x = element_line(size = 0.2),
+      axis.ticks.length = unit(0.1, "cm"),
+      #axis.line.x = element_line(size = 0.3, color = "black"),
+      strip.text = element_text(size = 11, face = "italic", color = "grey22"),
+      strip.background = element_rect(fill = "white", color ="white"),
+      panel.background = element_rect(fill = "white"),
+      plot.background = element_rect(fill = "white"),
+      panel.grid.major.y = element_line(color = "grey", size = 0.2),
+      panel.grid.major.x = element_line(color = "grey", size = 0.2)
+     
+    )
+}
+```
+
+
+```{r}
+breaks1 <- seq(2000, 2020, by = 1)
+labels1 <- as.character(breaks1)
+labels1[!breaks1 %% 2 == 0] <- ""
+
+breaks2 <-seq(0,13000,by = 2000)
+labels2 <- imap_chr(breaks2, function(., id){
+  return(paste0(formatC(breaks2[id], format="f", big.mark="," , digits = 0),
+                             ""))
+})
+```
+
+
+
+```{r}
+plot2 <-ggplot(
+  data = stations,
+  mapping = aes(x = year,
+                y = number_of_stations_pa)
+) +
+  geom_line(color = "turquoise4", size = 1.1, alpha = 0.7) +
+  geom_point(color = "turquoise4", size = 1.2, alpha = 0.7) +
+  facet_wrap(fct_reorder(prod_area_name2, 
+                         prod_area_id,
+                         min) ~ .) +
+  scale_x_continuous(limits = c(2000, 2020), breaks = breaks1, labels = labels1) +
+  scale_y_continuous(breaks = breaks2, labels = labels2) +
+  labs(y = "Number of waste water \ntreatment stations", x = "") +
+  geom_hline(yintercept = 0, color = "black", size = 0.3) +
+  theme_akva()
+```
+
+
+## Save the plots 1 and 2
+
+
+```{r}
+ggsave("figs/waste_water_stations_19_map.pdf", plot = plot1, width = 10, height =  12, dpi = 300)
+
+ggsave("figs/waste_water_stations_allyr_line.pdf", plot = plot2, width = 12, height =  10, dpi = 300)
+```
+
+
+
+## Waste water stations for all years (if)
+
+
+This is an example from aquaculture production plotting
+
+```{r}
+
+# prodareas_sf_prep2 <- prodareas_sf %>% 
+#    mutate(
+#     prod_area_name = str_replace_all(
+#       name, pattern = "->", replacement = "-"
+#     )
+#   ) %>% 
+#   mutate(
+#     prod_area_name = str_replace_all(
+#       prod_area_name, pattern = fixed("+"), replacement = "-"
+#     )
+#   ) %>% 
+#   select(-name)
+```
+
+I merge the two tables and transform production from kg to tons:
+```{r}
+# plot_aquaprod <- left_join(
+#   aqua_prod,
+#   prodareas_sf_prep2, 
+#   by = "prod_area_name") %>% 
+#   mutate(production_tons = production_per_region/1000) %>% 
+#   select(-id) %>% 
+#   st_as_sf(.)
+```
+
+
+```
+
