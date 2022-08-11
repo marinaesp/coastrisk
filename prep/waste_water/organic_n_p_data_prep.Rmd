@@ -57,14 +57,14 @@ And this is the data on association between municipalities, counties and aquacut
 It was made by Anna Siwertsson, original table is on the coastrisk ftp, folder ProductionAreas.
 
 ```{r}
-mcp_pa <- read_delim("../aquaculture/data/raw/municipality_productionarea.csv", delim = " ")
+mcp_pa <- read.csv("../aquaculture/data/raw/municipality_productionarea.csv", sep = " ")
 ```
 
 # Cleaning waste water treatment datasets
 
 ## Number of stations
 
-I extract countys' names and replace . with NA (these are unreliable data, as SSB explains)
+I extract counties' names and replace with NA (these are unreliable data, as SSB explains)
 ```{r}
 colnames(anlegg)[c(1,2)] <- c("county_year", "undefined") 
 
@@ -85,23 +85,38 @@ anlegg_prep <- anlegg |>
 
 Now i can merge the table of anlegg with production zones
 
-I need a county number from the table on production zones, in this table the column of counties' numbers is mistakenly called kommunenummer. I will change that.
+I need to clean the production areas table, to make areas names similar to other such tables in the project 
+
+
 ```{r}
-mcp_pa_prep <-mcp_pa |> 
-  rename(county_number = kommunenummer) |> 
-  select(county_number, name)
+mcp_pa_prep <- mcp_pa %>% 
+  rename(county_number = fylkenummer,
+         municip_number = kommunenummer,
+         municip_name = komname,
+         total_mcp_area = Totalt_areal_inkl_12nm,
+         sea_mcp_area = Havflate_12nm,
+         prod_area_id = id,
+         prod_area_name = name
+         ) %>% 
+  select(-knum) %>% 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = "->", replacement = "-"
+    )
+  ) %>% 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = fixed("+"), replacement = "-"
+    )
+  )
+
 ```
 
 
-Merge the two tables
-```{r}
-anlegg_per_pa <- anlegg_prep |> 
-  left_join(mcp_pa_prep, by = "county_number")
-```
 
 
-There are mismatches in the tables because Oslo should be 03 in the anlegg table, Sor and Nord-Trondelag both should be 
-50, since they have merged in 2018
+There are mismatches in the tables because Oslo should be 3 in the anlegg table, Sor and Nord-Trondelag both should be 
+50, since they have merged in 2018. Also, other counties have a leading zero in their number in anlegg table, I need to remove it before I merge anlegg table with production areas.
 
 https://www.regjeringen.no/no/dokument/dep/kdd/andre-dokumenter/brev/utvalgte_brev/2016/nye-fylkes--og-kommunenummer---trondelag-fylke/id2513267/
 
@@ -123,14 +138,18 @@ anlegg_prep2 <- anlegg_prep |>
     county_number,
     county_number == "17",
     "50"
-  ))
+  )) |> 
+  mutate(county_number = str_replace_all(county_number, pattern = "^0", replacement = "") ) |> 
+  mutate(county_number = as.integer(county_number))
 ```
 
 And merge the tables again
 
 ```{r}
 anlegg_per_pa <- anlegg_prep2 |> 
-  left_join(mcp_pa_prep, by = "county_number")
+  left_join(mcp_pa_prep, by = "county_number") |> 
+  select(year, county, county_number, number_of_stations, prod_area_id, prod_area_name)
+  
 ```
 
 Now there are only Hedmark and Oppland fylker (located innand) that did not match, because production areas do not overlap with them. I just remove them from the table.
@@ -139,22 +158,10 @@ Finally, I aggregate the data per production area and edit production areas' nam
 ```{r}
 anlegg_per_pa2 <- anlegg_per_pa |> 
   filter(!county  %in% c("Hedmark", "Oppland")) |> 
-  group_by(year, name) |> 
-  summarize(number_of_station_pa = sum(number_of_stations, na.rm=T)) |> 
-  mutate(prod_area_id = word(name, start = 1)) |> 
-  mutate(prod_area_name = str_replace(name, pattern = "^[0-9]+", replacement = "")) |> 
-  select(-name) |> 
-     mutate(
-    prod_area_name = str_replace_all(
-      prod_area_name, pattern = "->", replacement = "-"
-    )
-  )|> 
-  mutate(
-    prod_area_name = str_replace_all(
-      prod_area_name, pattern = fixed("+"), replacement = "-"
-    )
-  ) |> 
-  mutate(prod_area_name2 = str_c(prod_area_id, prod_area_name, sep = ": "))
+  group_by(year, prod_area_id, prod_area_name) |> 
+  summarize(number_of_stations_pa = sum(number_of_stations, na.rm=T)) |> 
+  mutate(prod_area_name2 = str_c(prod_area_id, prod_area_name, sep = ": ")) |> 
+  select(year, prod_area_id, prod_area_name, prod_area_name2, number_of_stations_pa)
 
 ```
 
@@ -203,14 +210,17 @@ organic_prep2 <- organic_prep |>
     county_number,
     county_number == "17",
     "50"
-  ))
+  )) |> 
+  mutate(county_number = str_replace_all(county_number, pattern = "^0", replacement = "") ) |> 
+  mutate(county_number = as.integer(county_number))
 ```
 
 
 Merge organic waste table with production areas table
 ```{r}
 organic_per_pa <- organic_prep2 |> 
-  left_join(mcp_pa_prep, by = "county_number")
+  left_join(mcp_pa_prep, by = "county_number") |> 
+  select(year, county, county_number, method, organic_discharge_tonn, prod_area_id, prod_area_name)
 ```
 
 As before, there is no match for Hedmark and Oppdal, I remove them from the final table
@@ -218,22 +228,10 @@ As before, there is no match for Hedmark and Oppdal, I remove them from the fina
 ```{r}
 organic_per_pa2 <- organic_per_pa |> 
   filter(!county  %in% c("Hedmark", "Oppland")) |> 
-  group_by(method, year, name) |> 
+  group_by(year, method, prod_area_id, prod_area_name) |> 
   summarize(organic_discharge_ton = sum(organic_discharge_tonn, na.rm=T)) |> 
-  mutate(prod_area_id = word(name, start = 1)) |> 
-  mutate(prod_area_name = str_replace(name, pattern = "^[0-9]+", replacement = "")) |> 
-  select(-name) |> 
-     mutate(
-    prod_area_name = str_replace_all(
-      prod_area_name, pattern = "->", replacement = "-"
-    )
-  )|> 
-  mutate(
-    prod_area_name = str_replace_all(
-      prod_area_name, pattern = fixed("+"), replacement = "-"
-    )
-  ) |> 
-  mutate(prod_area_name2 = str_c(prod_area_id, prod_area_name, sep = ": "))
+  mutate(prod_area_name2 = str_c(prod_area_id, prod_area_name, sep = ": ")) |> 
+  select(year, prod_area_id, prod_area_name, prod_area_name2, method, organic_discharge_ton)
 
 ```
 
@@ -289,14 +287,17 @@ np_prep2 <- np_prep |>
     county_number,
     county_number == "17",
     "50"
-  ))
+  )) |> 
+  mutate(county_number = str_replace_all(county_number, pattern = "^0", replacement = "") ) |> 
+  mutate(county_number = as.integer(county_number))
 ```
 
 
 Merge np waste table with production areas table
 ```{r}
 np_per_pa <- np_prep2 |> 
-  left_join(mcp_pa_prep, by = "county_number")
+  left_join(mcp_pa_prep, by = "county_number") |> 
+select(year, county, county_number, P_ton, N_ton, prod_area_id, prod_area_name)
 ```
 
 No match for Hedmark and Oppdal, I remove them 
@@ -304,24 +305,11 @@ No match for Hedmark and Oppdal, I remove them
 ```{r}
 np_per_pa2 <- np_per_pa |> 
   filter(!county  %in% c("Hedmark", "Oppland")) |> 
-  group_by(year, name) |> 
+  group_by(year, prod_area_id, prod_area_name) |> 
   summarize(N_discharge_ton = sum(N_ton, na.rm=T),
             P_discharge_ton = sum(P_ton, na.rm=T)) |> 
-  mutate(prod_area_id = word(name, start = 1)) |> 
-  mutate(prod_area_name = str_replace(name, pattern = "^[0-9]+", replacement = "")) |> 
-  select(-name) |> 
-     mutate(
-    prod_area_name = str_replace_all(
-      prod_area_name, pattern = "->", replacement = "-"
-    )
-  )|> 
-  mutate(
-    prod_area_name = str_replace_all(
-      prod_area_name, pattern = fixed("+"), replacement = "-"
-    )
-  ) |> 
-  mutate(prod_area_name2 = str_c(prod_area_id, prod_area_name, sep = ": "))
-
+  mutate(prod_area_name2 = str_c(prod_area_id, prod_area_name, sep = ": ")) |> 
+  select(year, prod_area_id, prod_area_name, prod_area_name2, N_discharge_ton, P_discharge_ton)
 ```
 
 Save the table

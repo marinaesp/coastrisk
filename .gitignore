@@ -9,11 +9,15 @@ Nedborfelt_Vassdragsomr.shx
 
 /prep/aquaculture/figs
 
-/prep/aquaculture/data/
+/prep/aquaculture/data/output
 
-/prep/hydropower/data/
+/prep/aquaculture/data/raw
 
-/prep/waste_water/data/
+/prep/hydropower/data/output
+
+/prep/waste_water/data/output
+
+/prep/waste_water/data/raw
 
 /prep/waste_water/figs
 
