@@ -7,21 +7,21 @@ Nedborfelt_Vassdragsomr.prj
 Nedborfelt_Vassdragsomr.shp
 Nedborfelt_Vassdragsomr.shx
 
-/prep/aquaculture/figs
+/prep/aquaculture/figs/
 
-/prep/aquaculture/data/output
+/prep/aquaculture/data/output/
 
-/prep/aquaculture/data/raw
+/prep/aquaculture/data/raw/
 
-/prep/hydropower/data/output
+/prep/hydropower/data/output/
 
-/prep/hydropower/data/raw
+/prep/hydropower/data/raw/
 
-/prep/waste_water/data/output
+/prep/waste_water/data/output/*.csv
 
-/prep/waste_water/data/raw
+/prep/waste_water/data/raw/
 
-/prep/waste_water/figs
+/prep/waste_water/figs/
 
 /prep/fisheries/data/
 
