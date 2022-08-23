@@ -15,6 +15,8 @@ Nedborfelt_Vassdragsomr.shx
 
 /prep/hydropower/data/output
 
+/prep/hydropower/data/raw
+
 /prep/waste_water/data/output
 
 /prep/waste_water/data/raw
@@ -23,3 +25,6 @@ Nedborfelt_Vassdragsomr.shx
 
 /prep/fisheries/data/
 
+/prep/administrative/figs/
+
+/prep/administrative/data/

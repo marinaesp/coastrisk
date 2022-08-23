@@ -53,18 +53,21 @@ np <- readxl::read_excel("./data/raw/total_n_p_discharge_sewage.xlsx", sheet = 1
                    range = "A3:V41")
 ```
 
-And this is the data on association between municipalities, counties and aquacutlure production areas.
-It was made by Anna Siwertsson, original table is on the coastrisk ftp, folder ProductionAreas.
+
+Now load the table on the intersections between the counties and production areas. I will need these intersection to calculate the proportion of each county within each production zone. Most often, there willbe just 1 or 2 counties within one produciton zone.
 
 ```{r}
-mcp_pa <- read.csv("../aquaculture/data/raw/municipality_productionarea.csv", sep = " ")
+#mcp_pa <- read.csv("../aquaculture/data/raw/municipality_productionarea.csv", sep = " ")
+
+intersections <- read.csv("../administrative/data/counties_prodareas_intersections.csv")
+
 ```
 
 # Cleaning waste water treatment datasets
 
 ## Number of stations
 
-I extract counties' names and replace with NA (these are unreliable data, as SSB explains)
+I extract counties' names and replace .. with NA (these are unreliable data, as SSB explains)
 ```{r}
 colnames(anlegg)[c(1,2)] <- c("county_year", "undefined") 
 
@@ -85,20 +88,12 @@ anlegg_prep <- anlegg |>
 
 Now i can merge the table of anlegg with production zones
 
-I need to clean the production areas table, to make areas names similar to other such tables in the project 
+I need to clean the intersections table, to make areas names similar to other such tables in the project 
 
 
 ```{r}
-mcp_pa_prep <- mcp_pa %>% 
-  rename(county_number = fylkenummer,
-         municip_number = kommunenummer,
-         municip_name = komname,
-         total_mcp_area = Totalt_areal_inkl_12nm,
-         sea_mcp_area = Havflate_12nm,
-         prod_area_id = id,
-         prod_area_name = name
-         ) %>% 
-  select(-knum) %>% 
+intersections_prep <- intersections %>% 
+  rename(county_number = county_nubmer) |> 
   mutate(
     prod_area_name = str_replace_all(
       prod_area_name, pattern = "->", replacement = "-"
@@ -115,12 +110,14 @@ mcp_pa_prep <- mcp_pa %>%
 
 
 
-There are mismatches in the tables because Oslo should be 3 in the anlegg table, Sor and Nord-Trondelag both should be 
-50, since they have merged in 2018. Also, other counties have a leading zero in their number in anlegg table, I need to remove it before I merge anlegg table with production areas.
+There are mismatches in the tables because Oslo and Akershus should both be 3 in the intersections, Sor and Nord-Trondelag both should be 50, since they have merged in 2018. Also, other counties have a leading zero in their number in anlegg table, I need to remove it before I merge anlegg table with production areas. In the anlegg table, there are also Nord- and Sor-Trondelag, but i will merge them 
 
 https://www.regjeringen.no/no/dokument/dep/kdd/andre-dokumenter/brev/utvalgte_brev/2016/nye-fylkes--og-kommunenummer---trondelag-fylke/id2513267/
 
 https://www.regjeringen.no/no/tema/kommuner-og-regioner/kommunestruktur/nyekommuneogfylkesnummer/id2629203/?expand=factbox2629210
+
+
+So in the anlegg table, I collapse all Trondelag together (before it was south and north Trondelag, later - only Trondelag). I just take a sum of the values each year (2002-2018 south and north)
 
 ```{r}
 anlegg_prep2 <- anlegg_prep |> 
@@ -141,27 +138,69 @@ anlegg_prep2 <- anlegg_prep |>
   )) |> 
   mutate(county_number = str_replace_all(county_number, pattern = "^0", replacement = "") ) |> 
   mutate(county_number = as.integer(county_number))
-```
 
-And merge the tables again
+
+#Collapsing Trondelag. Note that NAs became zeroes, so i need to replace zeroes with NA.
+anlegg_prep3 <- anlegg_prep2 |> 
+  group_by(county_number, year) |> 
+  summarize(number_of_stations = sum(number_of_stations, na.rm = T)) |> 
+  mutate(number_of_stations = ifelse(number_of_stations == 0,
+                                     NA,
+                                     number_of_stations)) 
+```
+Now I also need to collapse Trondelag in the intersections table. Also collapse Akershus and Oslo as county number 3
 
 ```{r}
-anlegg_per_pa <- anlegg_prep2 |> 
-  left_join(mcp_pa_prep, by = "county_number") |> 
-  select(year, county, county_number, number_of_stations, prod_area_id, prod_area_name)
+intersections_prep2 <- intersections_prep |> 
+    mutate(county_number = replace(
+    county_number,
+    county_number == "16",
+    "50"
+  )) |> 
+  mutate(county_number = replace(
+    county_number,
+    county_number == "17",
+    "50"
+  )) |> 
+  mutate(county_number = replace(
+    county_number,
+    county_number == "2",
+    "3"
+  )) |> 
+   mutate(county_number = str_replace_all(county_number, pattern = "^0", replacement = "")) |> 
+  group_by(prod_area_id, prod_area_name, county_number) |> 
+  summarize(intersection_area_m2 = sum(intersection_area_m2, na.rm=T)) |> 
+  mutate(county_number = as.integer(county_number))
+
+```
+
+
+And merge the tables 
+
+```{r}
+anlegg_per_pa <- anlegg_prep3 |> 
+  left_join(intersections_prep2, by = "county_number") |> 
+  select(year,county_number, number_of_stations, prod_area_id, prod_area_name, intersection_area_m2)
   
 ```
 
-Now there are only Hedmark and Oppland fylker (located innand) that did not match, because production areas do not overlap with them. I just remove them from the table.
+Now there are only Hedmark  (located inland) that did not match, because production areas do not overlap with them. I just remove them from the table.
 
 Finally, I aggregate the data per production area and edit production areas' names. 
+This time i will use a crude method to estiamte how many stations are there per production area: take the number of stations per county, and multiply by the proportion of that county in a given production area.
+
+The best approach would be to calcualte the exact number of wastewater station within a polygon of produciton area, i will do that as soon as i get the coordinates of wastewater stations.
+
 ```{r}
 anlegg_per_pa2 <- anlegg_per_pa |> 
-  filter(!county  %in% c("Hedmark", "Oppland")) |> 
+  filter(!county_number == "4") |> 
+  group_by(year,prod_area_id, prod_area_name) |> 
+  mutate(tot_area = sum(intersection_area_m2, na.rm=T)) |> 
+  mutate(county_prop_in_pa = intersection_area_m2/tot_area) |> 
   group_by(year, prod_area_id, prod_area_name) |> 
-  summarize(number_of_stations_pa = sum(number_of_stations, na.rm=T)) |> 
-  mutate(prod_area_name2 = str_c(prod_area_id, prod_area_name, sep = ": ")) |> 
-  select(year, prod_area_id, prod_area_name, prod_area_name2, number_of_stations_pa)
+  summarize(number_of_stations_pa = sum(number_of_stations*county_prop_in_pa)) |> 
+  mutate(number_of_stations_pa = round(number_of_stations_pa, digits= 0)) |> 
+    mutate(prod_area_name2 = str_c(prod_area_id, prod_area_name, sep = ": "))
 
 ```
 
@@ -169,6 +208,7 @@ anlegg_per_pa2 <- anlegg_per_pa |>
 ```{r}
 purrr::map(anlegg_per_pa2, ~ sum(is.na(.x)))
 ```
+All the NA in the number of stations are from year 2020, when data was unreliable (SSB has not updated their statistics to 2020)
 
 Save this table
 ```{r}
@@ -215,21 +255,34 @@ organic_prep2 <- organic_prep |>
   mutate(county_number = as.integer(county_number))
 ```
 
+```{r}
+organic_prep3 <- organic_prep2 |> 
+  group_by(county_number, year, method) |> 
+  summarize(organic_discharge_tonn = sum(organic_discharge_tonn, na.rm = T)) |> 
+  mutate(organic_discharge_tonn = ifelse(organic_discharge_tonn == 0,
+                                     NA,
+                                     organic_discharge_tonn)) 
+```
+
 
 Merge organic waste table with production areas table
 ```{r}
 organic_per_pa <- organic_prep2 |> 
-  left_join(mcp_pa_prep, by = "county_number") |> 
-  select(year, county, county_number, method, organic_discharge_tonn, prod_area_id, prod_area_name)
+  left_join(intersections_prep2, by = "county_number") |> 
+  select(year, county_number, method, organic_discharge_tonn, prod_area_id, prod_area_name, intersection_area_m2)
+
 ```
 
 As before, there is no match for Hedmark and Oppdal, I remove them from the final table
  
 ```{r}
 organic_per_pa2 <- organic_per_pa |> 
-  filter(!county  %in% c("Hedmark", "Oppland")) |> 
+ filter(!county_number == "4") |> 
   group_by(year, method, prod_area_id, prod_area_name) |> 
-  summarize(organic_discharge_ton = sum(organic_discharge_tonn, na.rm=T)) |> 
+  mutate(tot_area = sum(intersection_area_m2, na.rm=T)) |> 
+  mutate(county_prop_in_pa = intersection_area_m2/tot_area) |> 
+  group_by(year, prod_area_id, prod_area_name, method)  |> 
+  summarize(organic_discharge_ton = sum(organic_discharge_tonn*county_prop_in_pa)) |> 
   mutate(prod_area_name2 = str_c(prod_area_id, prod_area_name, sep = ": ")) |> 
   select(year, prod_area_id, prod_area_name, prod_area_name2, method, organic_discharge_ton)
 
@@ -292,22 +345,40 @@ np_prep2 <- np_prep |>
   mutate(county_number = as.integer(county_number))
 ```
 
+```{r}
+np_prep3 <- np_prep2 |> 
+group_by(county_number, year) |> 
+summarize(N_ton = sum(N_ton, na.rm=T),
+          P_ton = sum(P_ton, na.rm=T)) |> 
+mutate(N_ton = ifelse(N_ton == 0,
+                                    NA,
+                                     N_ton))  |> 
+mutate(P_ton = ifelse(P_ton == 0,
+                                    NA,
+                                     P_ton))  
+  
+```
+
 
 Merge np waste table with production areas table
 ```{r}
-np_per_pa <- np_prep2 |> 
-  left_join(mcp_pa_prep, by = "county_number") |> 
-select(year, county, county_number, P_ton, N_ton, prod_area_id, prod_area_name)
+np_per_pa <- np_prep3 |> 
+left_join(intersections_prep2, by = "county_number") |> 
+select(year, county_number, P_ton, N_ton, prod_area_id, prod_area_name, intersection_area_m2)
+
 ```
 
 No match for Hedmark and Oppdal, I remove them 
  
 ```{r}
 np_per_pa2 <- np_per_pa |> 
-  filter(!county  %in% c("Hedmark", "Oppland")) |> 
+ filter(!county_number == "4") |> 
   group_by(year, prod_area_id, prod_area_name) |> 
-  summarize(N_discharge_ton = sum(N_ton, na.rm=T),
-            P_discharge_ton = sum(P_ton, na.rm=T)) |> 
+  mutate(tot_area = sum(intersection_area_m2, na.rm=T)) |> 
+  mutate(county_prop_in_pa = intersection_area_m2/tot_area) |> 
+  group_by(year, prod_area_id, prod_area_name) |> 
+  summarize(N_discharge_ton = sum(N_ton*county_prop_in_pa),
+            P_discharge_ton = sum(P_ton*county_prop_in_pa)) |> 
   mutate(prod_area_name2 = str_c(prod_area_id, prod_area_name, sep = ": ")) |> 
   select(year, prod_area_id, prod_area_name, prod_area_name2, N_discharge_ton, P_discharge_ton)
 ```

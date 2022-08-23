@@ -1,0 +1,133 @@
+---
+title: "Defining intersecitons between counties and produciton areas"
+author: "*Compiled on `r date()` by `r Sys.info()['user']`*"
+output:
+  html_document:
+    css: '~/github/coastrisk/src/style_coast.css'
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: haddock
+    includes: 
+      in_header: 
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+source('~/github/coastrisk/src/common.r')
+```
+
+```{r}
+library(sf)
+library(mapdata)
+library(maptools)
+library(rgdal)
+library(rgeos)
+library(maps)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(stringr)
+```
+
+
+Here I need to define the intersection between counties polygons and production areas polygons. Often, counties will be larger than prod areas, so several prod areas can fit in one county. 
+Later  I need to know the area of intersection between each prod area and a county, and calculate the proportion of each prod area within a county. Using this proporiton, I can calculate the number of waste water stations per production area.
+
+```{r}
+prod_areas <- readOGR(dsn = "/Volumes/ftp.imr.no/ProductionAreas/OGRgeoJSON_prodomr")
+prodareas_sf <- st_as_sf(prod_areas, coords= c("long", "lat"), agr="identity")
+```
+
+Polygons of Norwegian fylker
+
+https://gis.stackexchange.com/questions/151613/reading-feature-class-in-file-geodatabase-using-r
+
+```{r}
+require(rgdal)
+fylker <-readOGR(dsn = "/Users/marinaespinasse/github/nor-prep/prep/administrative/raw/shapefiles/NO_Fylker")
+fylkersf <- st_as_sf(fylker,coords= c("long", "lat"), crs = 4326)
+
+
+```
+
+
+
+```{r}
+path = "/Users/marinaespinasse/Downloads/Basisdata_0000_Norge_25833_Fylker_FGDB.gdb"
+fylker <- st_read(path)
+```
+Check the projection of both files - seems to be WGS84 for both
+
+```{r}
+ st_crs(fylker)
+ st_crs(prod_areas)
+ sf_use_s2(FALSE)
+```
+
+Extract counties' names from fylker table
+
+https://www.eriksmistad.no/norges-fylker-og-kommuner-i-geojson-format/
+
+```{r}
+fylker$name <- c("Rogaland", "Vestfold og Telemark","Nordland",
+                 "Agder", "Innlandet","Møre og Romsdal", "Vestland",
+                 "Oslo", "Viken", "Trøndelag", "Troms og Finnmark")
+
+fylker_prep <- fylkersf |> 
+ rename(county_nubmer = NR,
+         county_name = NAVN) |> 
+ select(-c(OBJTYPE, OBJECTID)) |> 
+  clean_names()
+```
+
+# Calcualte intersections between produciton areas and counties
+
+
+Make fylker crs same as crs of production areas
+
+```{r}
+fylker_trans <- st_transform(fylker_prep, crs = st_crs(prodareas_sf))
+#fylker_trans2 = st_transform(fylker_prep, crs = "+proj=longlat +datum=WGS84")
+```
+
+```{r}
+intersects <- st_intersection(prodareas_sf, fylker_trans)
+intersects$intersection_area_m2 <-as.vector(st_area(intersects))
+
+
+fylker_trans_centroids <- cbind(fylker_trans, st_coordinates(st_centroid(fylker_trans)))
+```
+
+
+```{r}
+fylker_n_pa <- ggplot() +
+geom_sf(data = fylker_trans, fill = NA, color = "darkblue") +
+geom_sf(data = prodareas_sf, fill=NA, color = "darkred", size = 1)  +
+  geom_sf_text(data = fylker_trans_centroids, aes(X,Y, label = county_nubmer), fontface = "bold", size = 3, color = "green") +
+  theme_bw() 
+```
+
+
+```{r}
+ggsave("figs/counties_n_prodareas_map.pdf", plot = fylker_n_pa, width = 7, height =  10, dpi = 300 )
+```
+
+As the plot suggest, some counties do not have any intersection with production areas.
+
+Clean the table on intersections between counties and produciton areas
+
+```{r}
+intersects_final <- intersects |> 
+  rename(prod_area_id = id,
+         prod_area_name = name) |> 
+  select(prod_area_id, prod_area_name, county_name, county_nubmer, intersection_area_m2) |> 
+  st_drop_geometry()
+```
+
+```{r}
+write_csv(intersects_final, file = "./data/counties_prodareas_intersections.csv")
+```
+
