@@ -389,3 +389,155 @@ Save the table
 write_csv(np_per_pa2, "./data/output/NP_discharge_per_prodarea.csv")
 ```
 
+
+# Estimate the number of wastewater station using spatial analysis
+
+Here I will use the spatial analysis way of calculating how many wastewater stations are there per production area. Simply, I need to get an intersection of polygons of production areas and coordiantes of the wastewater stations. This operation will results in the number of points (stations) within each production area polygon. I remove also the stations that do not have coordinates, there are only 12 of then (out of 2769 total).
+
+```{r}
+stations <- read_excel(path = "./data/raw/Aktive_avløpsanlegg_ 2022.xlsx")
+
+stations_prep <- stations |> 
+  clean_names() |> 
+  select(c(navn_pa_anlegg, ost_lok,nord_lok)) |> 
+  filter(!is.na(ost_lok))
+  
+
+```
+
+
+Make coordinates of stations a spatial sf object:
+
+https://stackoverflow.com/questions/70839722/convert-utm-to-latitude-and-longitude
+
+I asked Torstein F about the projection of stations data, he said that it is EURREF83 (utm 33 is one of those with EPSG code 25833)
+```{r}
+stations_sf <- st_as_sf(stations_prep, coords= c("ost_lok","nord_lok"),  agr="identity", crs = "EPSG:32632")
+#stations_sf <- st_as_sf(stations_prep, coords= c("ost_lok", "nord_lok"), crs = "+proj=utm +zone=32")
+#stations_sf <- st_as_sf(stations_prep, coords= c("ost_lok", "nord_lok"), crs = "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+
+#stations_test <- spTransform(stations_sf, CRS("+proj=longlat +datum=WGS84"))
+
+plot(stations_sf)
+```
+
+## Here i'm jsut trying another way to read and plot the data
+
+```{r}
+xySPoints <- SpatialPointsDataFrame(coords = c(stations_prep[,c("ost_lok", "nord_lok")]),
+proj4string = CRS("+proj=utm +proj=utm +zone=30"),
+data = stations_prep)
+```
+
+
+```{r}
+plot(xySPoints, pch = ".")
+```
+
+Polygons of production areas
+```{r}
+prod_areas <- readOGR(dsn = "/Volumes/ftp.imr.no/ProductionAreas/OGRgeoJSON_prodomr")
+prodareas_sf <- st_as_sf(prod_areas, coords= c("long", "lat"), agr="identity")
+
+```
+
+The plot of stations looks strange but even when its crs is same as for production areas (WGS84).
+```{r}
+stations_trans <- st_transform(stations_sf, crs = st_crs(prodareas_sf) )
+plot(stations_trans)
+```
+Have a quick look at where there are most of wastewater treatment stations
+
+```{r}
+ggplot() +
+  geom_sf(data = prodareas_sf, fill = NA, color = "darkblue") +
+  geom_sf(data = stations_trans, color = "darkred", size = 0.5, alpha = 0.7) +
+  theme_bw()
+```
+
+
+
+```{r}
+sf_use_s2(FALSE)
+points_in_pa <- st_intersection(prodareas_sf, stations_trans)
+```
+Clean the stations within production areas table. I clean the names of production areas, then I aggregate the number of  wastewater stations per produciton area (all stations that are within a produciton area will be summed).
+
+This spatial file does not work well.
+
+
+# Estimate stations per pa using Miljodir gdb file
+
+I got a link to download a fgdb files of wastewater treatment, will try it here
+
+https://nedlasting.miljodirektoratet.no/miljodata/Avlopsanlegg/FILEGDB/25833/
+
+```{r}
+fgdb <- "/Users/marinaespinasse/Downloads/Forurensning_Avlopsanlegg_0000_norge_med_svalbard_3035.gdb" 
+```
+
+```{r}
+subset(ogrDrivers(), grepl("GDB", name))
+fc_list <- ogrListLayers(fgdb)
+print(fc_list)
+
+fc <- readOGR(dsn=fgdb)
+```
+
+Reading this file with sf
+```{r}
+st_gdb <- st_read("/Users/marinaespinasse/Downloads/Forurensning_Avlopsanlegg_0000_norge_med_svalbard_3035.gdb")
+```
+
+```{r}
+st_gdb_trans <- st_transform(st_gdb, st_crs(prodareas_sf))
+```
+
+```{r}
+locations <- st_gdb_trans$SHAPE
+locations_sf <-st_as_sf(locations)
+points_in_pa_gdb <- st_intersection(prodareas_sf, locations_sf)
+
+```
+```{r}
+stations_within_pa_plot <- ggplot() +
+  geom_sf(data = prodareas_sf, fill = NA, color = "darkblue") +
+  geom_sf(data = st_gdb_trans, color = "darkred", size = 0.3, alpha = 0.5) +
+  theme_bw()
+```
+I save this plot for later reference
+
+```{r}
+ggsave(filename = "./figs/stations_within_prodareas.pdf", plot = stations_within_pa_plot, dpi = 300,
+       width = 6, height = 9)
+```
+
+
+Finally, calculate the number of stations within each polygon and clean the prod areas names
+
+```{r}
+station_in_pa_final <- points_in_pa_gdb %>% 
+  group_by(id, name) %>% 
+  count() |> 
+  rename(prod_area_id = id,
+         prod_area_name = name,
+         number_of_stations = n) |> 
+  st_drop_geometry(.) |> 
+   mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = "->", replacement = "-"
+    )
+  ) |> 
+  mutate(
+    prod_area_name = str_replace_all(
+      prod_area_name, pattern = fixed("+"), replacement = "-"
+    )
+  )
+
+  
+```
+
+```{r}
+write_csv(station_in_pa_final, "./data/output/water_treatment_stations_pa_precise.csv")
+```
+

@@ -35,7 +35,7 @@ library(stringr)
 # Load the data on waste water treatment and produciton areas polygons
 
 ```{r}
-stations <- read_csv("./data/output/water_treatment_stations_per_prodarea.csv")
+stations <- read_csv("./data/output/water_treatment_stations_pa_precise.csv")
 ```
 
 
@@ -60,10 +60,20 @@ sf_use_s2(FALSE)
 Now I need to add waste water data to the spatial object of production area polygons. We cannot plot all years at the same time (we can but would be difficult to discern the number, can plot this for supplementary). 
 
 ```{r}
-stations_2019 <- filter(stations, year == "2019")
-prodareas_sf$waste_stations19 <- stations_2019$number_of_stations_pa
-prodareas_sf$prod_area_name <- stations_2019$prod_area_name2
-prodareas_sf$prod_area_id <- stations_2019$prod_area_id
+# stations_2019 <- filter(stations, year == "2019")
+# prodareas_sf$waste_stations19 <- stations_2019$number_of_stations_pa
+# prodareas_sf$prod_area_name <- stations_2019$prod_area_name2
+# prodareas_sf$prod_area_id <- stations_2019$prod_area_id
+
+
+stations_prep <- stations |> 
+  arrange(prod_area_id)
+
+prodareas_sf$waste_stations <- stations_prep$number_of_stations
+
+prodareas_sf$prod_area_id <- stations_prep$prod_area_id
+
+
 ```
 
 ```{r}
@@ -113,7 +123,7 @@ plot1 <- ggplot() +
   ) +
   scale_x_continuous(breaks = c(0,5,10,15,20, 25,30)) +
   geom_sf(
-    mapping = aes(fill = waste_stations19),
+    mapping = aes(fill = waste_stations),
     data = prodareas_sf,
     color = "grey68",
     size = 0.5
@@ -126,7 +136,7 @@ plot1 <- ggplot() +
 ```
 
 
-## A line grapth
+## A line grapth of stations
 
 I reuse aquaculture theme to make plots in the paper more alike
 
@@ -162,7 +172,7 @@ breaks1 <- seq(2000, 2020, by = 1)
 labels1 <- as.character(breaks1)
 labels1[!breaks1 %% 2 == 0] <- ""
 
-breaks2 <-seq(0,13000,by = 2000)
+breaks2 <-seq(0,500,by = 100)
 labels2 <- imap_chr(breaks2, function(., id){
   return(paste0(formatC(breaks2[id], format="f", big.mark="," , digits = 0),
                              ""))
@@ -201,10 +211,63 @@ ggsave("figs/waste_water_stations_allyr_line.pdf", plot = plot2, width = 12, hei
 
 
 
+# A line grapth for N and P discharge
+
+## Load data on N and P discharge
+
+```{r}
+np <- read_csv("./data/output/NP_discharge_per_prodarea.csv")
+```
+
+
+
+```{r}
+np_prep <- np |> 
+  pivot_longer(cols = c(N_discharge_ton,P_discharge_ton),
+               names_to = "Discharge_type",
+               values_to = "Discharge_amount_ton") 
+```
+
+
+```{r}
+breaks_np <-seq(0,2200,by = 400)
+labels_np <- imap_chr(breaks_np, function(., id){
+  return(paste0(formatC(breaks_np[id], format="f", big.mark="," , digits = 0),
+                             ""))
+})
+```
+
+
+```{r}
+plot3 <-ggplot(
+  data = np_prep,
+  mapping = aes(x = year,
+                y = Discharge_amount_ton)
+) +
+  geom_line(aes(color = Discharge_type), size = 1.1, alpha = 0.7) +
+  geom_point(aes(color = Discharge_type), size = 1.2, alpha = 0.7) +
+  facet_wrap(fct_reorder(prod_area_name2,
+                         prod_area_id,
+                         min) ~ .) +
+  scale_x_continuous(limits = c(2000, 2020), breaks = breaks1, labels = labels1) +
+  scale_y_continuous(breaks = breaks_np, labels = labels_np) +
+  labs(y = "Discharge of N and P, ton", x = "") +
+  scale_color_manual(values = c("darkolivegreen", "darkgoldenrod4"), name = "Element") +
+  geom_hline(yintercept = 0, color = "black", size = 0.3) +
+  theme_akva()
+```
+
+
+Save this plot
+
+```{r}
+ggsave("figs/np_discharge_allyr_line.pdf", plot = plot3, width = 12, height =  10, dpi = 300)
+```
+
 ## Waste water stations for all years (if)
 
 
-This is an example from aquaculture production plotting
+This is an example from aquaculture production plotting. See an example from aquaculture
 
 ```{r}
 
@@ -222,7 +285,7 @@ This is an example from aquaculture production plotting
 #   select(-name)
 ```
 
-I merge the two tables and transform production from kg to tons:
+
 ```{r}
 # plot_aquaprod <- left_join(
 #   aqua_prod,
